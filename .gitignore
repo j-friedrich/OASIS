@@ -1,0 +1,10 @@
+## Compiled python files
+*.c
+*.so
+*.pyc
+
+# Distribution / packaging
+build/
+
+# MacOS
+*.DS_Store
