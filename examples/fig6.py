@@ -64,7 +64,7 @@ def deconvolveAR1(y, g, tau=np.inf, lam=0, s_min=0):
 tauls = [0, 1, 2, 5, 10, np.inf]
 plt.figure(figsize=(7, 5))
 for j, sn in enumerate([.1, .2, .3]):
-    Y, trueC, trueSpikes = gen_data(noise=sn)
+    Y, trueC, trueSpikes = gen_data(sn=sn)
     N = len(Y)
     C = np.asarray([[deconvolveAR1(y, .95, tau=tau, lam=(.2 + .25 * np.exp(-tau / 2.)))  # lam=(.12 / (1 - (.8 if sn == .3 else .7)**(tau + 1))
                      for tau in tauls] for y in Y])
@@ -105,7 +105,7 @@ plt.show()
 
 plt.figure(figsize=(7, 5))
 for j, sn in enumerate([.1, .2, .3]):
-    Y, trueC, trueSpikes = gen_data(noise=sn)
+    Y, trueC, trueSpikes = gen_data(sn=sn)
     N = len(Y)
     C = np.asarray([[deconvolveAR1(y, .95, tau=tau, lam=0, s_min=.5 + .175 * np.exp(-tau))
                      for tau in tauls] for y in Y])
@@ -144,7 +144,7 @@ plt.show()
 
 # traces for OASIS with threshold s_min
 
-Y, trueC, trueSpikes = gen_data(noise=.3)
+Y, trueC, trueSpikes = gen_data(sn=.3)
 C = np.asarray([deconvolveAR1(Y[0], .95, tau=tau, lam=0, s_min=.5 + .175 * np.exp(-tau))
                 for tau in tauls])
 S = np.zeros_like(C)

@@ -30,8 +30,6 @@ g = .95
 sn = .3
 Y, trueC, trueSpikes = gen_data()
 N, T = Y.shape
-# result_cf = constrained_foopsi(Y[0], g=[g], sn=sn)
-# print 'lam', .5 / result_cf[-1] / (1-g)
 result_oasis = oasisAR1(Y[0], g=g, lam=2.4)
 result_foopsi = foopsi(Y[0], g=[g], lam=2.4)
 
@@ -131,11 +129,8 @@ detected_spikes = data['obj']['timeSeriesArrayHash'].item()[0]['value'].item()[0
 spike_time = t_ephys[detected_spikes.astype(bool)]
 
 g, sn = estimate_parameters(y, p=2, fudge_factor=.99)
-# c, s, lam = constrained_foopsi(y, g, sn)
-# result_onnls = onlineNNLS(y, g=g, lam=.5 / lam / (1 - g.sum()), mid=300, post=300)
-# result_oasis = oasisAR2(y, g1=g[0], g2=g[1], lam=.5 / lam / (1 - g.sum()))
 c, s = foopsi(y - mu, g)[:2]
-result_onnls = onlineNNLS(y - mu, g=g, mid=300, post=300)
+result_onnls = onlineNNLS(y - mu, g=g, shift=300, window=600)
 result_oasis = oasisAR2(y - mu, g1=g[0], g2=g[1])
 
 fig.add_axes([.54, .57, .46, .37])

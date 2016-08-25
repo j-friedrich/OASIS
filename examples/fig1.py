@@ -11,7 +11,7 @@ init_fig()
 col = ['#0072B2', '#009E73', '#D55E00']
 
 
-Y, trueC, trueSpikes = gen_data(gamma=[1.58, -.6], noise=.5, T=455,
+Y, trueC, trueSpikes = gen_data([1.58, -.6], .5, T=455,
                                 framerate=30, firerate=2., seed=0)
 plt.figure(figsize=(15, 2.5))
 for i, t in enumerate(trueSpikes[0, 20:-1]):
