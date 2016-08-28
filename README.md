@@ -24,5 +24,8 @@ To clean up temporary files follow it by:
 `python setup.py clean --all`
 
 ### Examples
-The scripts to produce the figures are in the subfolder 'examples' with names obvious from the arXiv paper. 
-They can be run with `python examples/script.py`. 
+The scripts to produce the figures and table are in the subfolder 'examples' with names obvious from the arXiv paper. 
+They can be run with `python examples/fig[1-6].py`. 
+
+#### Other implementations
+* Matlab: https://github.com/zhoupc/OASIS_matlab

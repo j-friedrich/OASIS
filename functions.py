@@ -322,7 +322,7 @@ def onlineNNLS(y, g, lam=0, shift=100, window=200, tol=1e-9, max_iter=None):
         h = np.exp(log(g[0]) * np.arange(w))
         for i in range(w):
             K[i:, i] = h[:w - i]
-    elif len(g) == 2:  # kernel for AR(1)
+    elif len(g) == 2:  # kernel for AR(2)
         _y = y - lam * (1 - g[0] - g[1])
         _y[-2] = y[-2] - lam * (1 - g[0])
         _y[-1] = y[-1] - lam

@@ -233,7 +233,7 @@ plt.show()
 
 gamma = np.array([1.7, -.712])
 sn = 1.
-Y, trueC, trueSpikes = gen_data(gamma, noise=sn, seed=3)
+Y, trueC, trueSpikes = gen_data(gamma, sn, seed=3)
 N, T = Y.shape
 
 # timeit

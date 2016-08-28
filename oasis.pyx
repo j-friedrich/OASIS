@@ -47,7 +47,7 @@ def oasisAR1(np.ndarray[DOUBLE, ndim=1] y, DOUBLE g, DOUBLE lam=0, DOUBLE s_min=
         Py_ssize_t c, i, f, l
         unsigned int len_active_set
         DOUBLE v, w
-        np.ndarray[DOUBLE, ndim = 1] solution
+        np.ndarray[DOUBLE, ndim = 1] solution, h
 
     len_active_set = len(y)
     solution = np.empty(len_active_set)
@@ -79,8 +79,10 @@ def oasisAR1(np.ndarray[DOUBLE, ndim=1] y, DOUBLE g, DOUBLE lam=0, DOUBLE s_min=
             active_set.pop(c + 1)
             len_active_set -= 1
     # construct solution
+    # calc explicit kernel h up to required length just once
+    h = np.exp(log(g) * np.arange(max([a[-1] for a in active_set])))
     for v, w, f, l in active_set:
-        solution[f:f + l] = max(v, 0) / w * g**np.arange(l)
+        solution[f:f + l] = max(v, 0) / w * h[:l]
     return solution, np.append(0, solution[1:] - g * solution[:-1])
 
 
@@ -132,7 +134,7 @@ def constrained_oasisAR1(np.ndarray[DOUBLE, ndim=1] y, DOUBLE g, DOUBLE sn, bool
         unsigned int len_active_set, ma, count, T
         DOUBLE thresh, v, w, RSS, aa, bb, cc, lam, dlam, b, db, dphi
         bool g_converged
-        np.ndarray[DOUBLE, ndim = 1] solution, res, tmp, fluor
+        np.ndarray[DOUBLE, ndim = 1] solution, res, tmp, fluor, h
         np.ndarray[long, ndim = 1] ff, ll
 
     T = len(y)
@@ -144,11 +146,12 @@ def constrained_oasisAR1(np.ndarray[DOUBLE, ndim=1] y, DOUBLE g, DOUBLE sn, bool
         thresh = thresh / decimate / decimate
         T = len(y)
     len_active_set = T
+    h = np.exp(log(g) * np.arange(T))  # explicit kernel, useful for constructing solution
     solution = np.empty(len_active_set)
     # [value, weight, start time, length] of pool
     active_set = [[y[i], 1, i, 1] for i in range(len_active_set)]
 
-    def oasis(active_set, g, solution):
+    def oasis(active_set, g, h, solution):
         solution = np.empty(active_set[-1][2] + active_set[-1][3])
         len_active_set = len(active_set)
         c = 0
@@ -177,16 +180,17 @@ def constrained_oasisAR1(np.ndarray[DOUBLE, ndim=1] y, DOUBLE g, DOUBLE sn, bool
                 len_active_set -= 1
         # construct solution
         for v, w, f, l in active_set:
-            solution[f:f + l] = v / w * np.exp(log(g) * np.arange(l))
+            solution[f:f + l] = v / w * h[:l]
         solution[solution < 0] = 0
         return solution, active_set
 
     if not optimize_b:  # don't optimize b nor g, just the dual variable lambda
-        solution, active_set = oasis(active_set, g, solution)
+        solution, active_set = oasis(active_set, g, h, solution)
         tmp = np.empty(len(solution))
         res = y - solution
         RSS = (res).dot(res)
         lam = 0
+        b = 0
         # until noise constraint is tight or spike train is empty
         while RSS < thresh * (1 - 1e-4) and sum(solution) > 1e-9:
             # calc RSS
@@ -195,9 +199,9 @@ def constrained_oasisAR1(np.ndarray[DOUBLE, ndim=1] y, DOUBLE g, DOUBLE sn, bool
             # update lam
             for i, (v, w, f, l) in enumerate(active_set):
                 if i == len(active_set) - 1:  # for |s|_1 instead |c|_1 sparsity
-                    tmp[f:f + l] = 1 / w * np.exp(log(g) * np.arange(l))
+                    tmp[f:f + l] = 1 / w * h[:l]
                 else:
-                    tmp[f:f + l] = (1 - g**l) / w * np.exp(log(g) * np.arange(l))
+                    tmp[f:f + l] = (1 - g**l) / w * h[:l]
             aa = tmp.dot(tmp)
             bb = res.dot(tmp)
             cc = RSS - thresh
@@ -205,13 +209,13 @@ def constrained_oasisAR1(np.ndarray[DOUBLE, ndim=1] y, DOUBLE g, DOUBLE sn, bool
             lam += dlam
             for a in active_set:     # perform shift
                 a[0] -= dlam * (1 - g**a[3])
-            solution, active_set = oasis(active_set, g, solution)
+            solution, active_set = oasis(active_set, g, h, solution)
 
     else:  # optimize b and dependend on optimize_g g too
         b = np.percentile(y, 15)  # initial estimate of baseline
         for a in active_set:     # subtract baseline
             a[0] -= b
-        solution, active_set = oasis(active_set, g, solution)
+        solution, active_set = oasis(active_set, g, h, solution)
         # update b and lam
         db = np.mean(y - solution) - b
         b += db
@@ -219,7 +223,7 @@ def constrained_oasisAR1(np.ndarray[DOUBLE, ndim=1] y, DOUBLE g, DOUBLE sn, bool
         # correct last pool
         active_set[-1][0] -= lam * g**active_set[-1][3]  # |s|_1 instead |c|_1
         v, w, f, l = active_set[-1]
-        solution[f:f + l] = max(0, v) / w * np.exp(log(g) * np.arange(l))
+        solution[f:f + l] = max(0, v) / w * h[:l]
         # calc RSS
         res = y - b - solution
         RSS = res.dot(res)
@@ -233,9 +237,9 @@ def constrained_oasisAR1(np.ndarray[DOUBLE, ndim=1] y, DOUBLE g, DOUBLE sn, bool
             # calc total shift dphi due to contribution of baseline and lambda
             for i, (v, w, f, l) in enumerate(active_set):
                 if i == len(active_set) - 1:  # for |s|_1 instead |c|_1 sparsity
-                    tmp[f:f + l] = 1 / w * np.exp(log(g) * np.arange(l))
+                    tmp[f:f + l] = 1 / w * h[:l]
                 else:
-                    tmp[f:f + l] = (1 - g**l) / w * np.exp(log(g) * np.arange(l))
+                    tmp[f:f + l] = (1 - g**l) / w * h[:l]
             tmp -= 1. / T / (1 - g) * np.sum([(1 - g**l)**2 / w for (_, w, _, l) in active_set])
             aa = tmp.dot(tmp)
             bb = res.dot(tmp)
@@ -244,7 +248,7 @@ def constrained_oasisAR1(np.ndarray[DOUBLE, ndim=1] y, DOUBLE g, DOUBLE sn, bool
             b += dphi * (1 - g)
             for a in active_set:     # perform shift
                 a[0] -= dphi * (1 - g**a[3])
-            solution, active_set = oasis(active_set, g, solution)
+            solution, active_set = oasis(active_set, g, h, solution)
             # update b and lam
             db = np.mean(y - solution) - b
             b += db
@@ -253,7 +257,7 @@ def constrained_oasisAR1(np.ndarray[DOUBLE, ndim=1] y, DOUBLE g, DOUBLE sn, bool
             # correct last pool
             active_set[-1][0] -= dlam * g**active_set[-1][3]  # |s|_1 instead |c|_1
             v, w, f, l = active_set[-1]
-            solution[f:f + l] = max(0, v) / w * np.exp(log(g) * np.arange(l))
+            solution[f:f + l] = max(0, v) / w * h[:l]
 
             # update g and b
             if optimize_g and count < max_iter - 1 and (not g_converged):
@@ -262,7 +266,7 @@ def constrained_oasisAR1(np.ndarray[DOUBLE, ndim=1] y, DOUBLE g, DOUBLE sn, bool
 
                 def bar(y, opt, a_s):
                     b, g = opt
-                    qq = np.exp(log(g) * np.arange(ma))
+                    h = np.exp(log(g) * np.arange(ma))
 
                     def foo(y, t_hat, len_set, q, b, g, lam=lam):
                         yy = y[t_hat:t_hat + len_set] - b
@@ -273,7 +277,7 @@ def constrained_oasisAR1(np.ndarray[DOUBLE, ndim=1] y, DOUBLE g, DOUBLE sn, bool
                             tmp = ((q.dot(yy) - lam * (1 - g**len_set)) * (1 - g * g)
                                    / (1 - g**(2 * len_set))) * q - yy
                         return tmp.dot(tmp)
-                    return sum([foo(y, a_s[i][2], a_s[i][3], qq[:a_s[i][3]], b, g) for i in idx[-optimize_g:]])
+                    return sum([foo(y, a_s[i][2], a_s[i][3], h[:a_s[i][3]], b, g) for i in idx[-optimize_g:]])
 
                 def baz(y, active_set):
                     return minimize(lambda x: bar(y, x, active_set), (b, g), bounds=((0, None), (0, 1)), method='L-BFGS-B',
@@ -282,13 +286,12 @@ def constrained_oasisAR1(np.ndarray[DOUBLE, ndim=1] y, DOUBLE g, DOUBLE sn, bool
                 if abs(result['x'][1] - g) < 1e-3:
                     g_converged = True
                 b, g = result['x']
-                qq = np.exp(log(g) * np.arange(ma))
                 for a in active_set:
-                    q = qq[:a[3]]
+                    q = h[:a[3]]
                     a[0] = q.dot(y[a[2]:a[2] + a[3]]) - (b / (1 - g) + lam) * (1 - g**a[3])
                     a[1] = q.dot(q)
                 active_set[-1][0] -= lam * g**active_set[-1][3]  # |s|_1 instead |c|_1
-                solution, active_set = oasis(active_set, g, solution)
+                solution, active_set = oasis(active_set, g, h, solution)
                 # update b and lam
                 db = np.mean(y - solution) - b
                 b += db
@@ -297,7 +300,7 @@ def constrained_oasisAR1(np.ndarray[DOUBLE, ndim=1] y, DOUBLE g, DOUBLE sn, bool
                 # correct last pool
                 active_set[-1][0] -= dlam * g**active_set[-1][3]  # |s|_1 instead |c|_1
                 v, w, f, l = active_set[-1]
-                solution[f:f + l] = max(0, v) / w * np.exp(log(g) * np.arange(l))
+                solution[f:f + l] = max(0, v) / w * h[:l]
 
             # calc RSS
             res = y - solution - b
@@ -316,15 +319,15 @@ def constrained_oasisAR1(np.ndarray[DOUBLE, ndim=1] y, DOUBLE g, DOUBLE sn, bool
         ll = np.append(ff[1:] - ff[:-1], T - ff[-1])
         active_set = map(list, zip([0.] * len(ll), [0.] * len(ll), list(ff), list(ll)))
         ma = max([a[3] for a in active_set])
-        qq = np.exp(log(g) * np.arange(ma))
+        h = np.exp(log(g) * np.arange(ma + 3 * decimate))
         for a in active_set:
-            q = qq[:a[3]]
+            q = h[:a[3]]
             a[0] = q.dot(fluor[a[2]:a[2] + a[3]]) - (b / (1 - g) + lam) * (1 - g**a[3])
             a[1] = q.dot(q)
         active_set[-1][0] -= lam * g**active_set[-1][3]  # |s|_1 instead |c|_1
         solution = np.empty(T)
 
-        solution, active_set = oasis(active_set, g, solution)
+        solution, active_set = oasis(active_set, g, h, solution)
 
     return solution, np.append(0, solution[1:] - g * solution[:-1]), b, g, lam
 
@@ -476,11 +479,7 @@ def oasisAR2(np.ndarray[DOUBLE, ndim=1] y, DOUBLE g1, DOUBLE g2,
 
     # construct solution
     for c, (v, last, f, l) in enumerate(a_s):
-        solution[f] = v
-        if l > 1:
-            solution[f + 1] = (g1 * solution[f] + g2 * a_s[c - 1][1])
-            for i in xrange(2, l):
-                solution[f + i] = (g1 * solution[f + i - 1] + g2 * solution[f + i - 2])
+        solution[f:f + l] = g11[:l] * v + (0 if c == 0 else g12[:l] * active_set[c - 1][1])
     solution[solution < 0] = 0
     return solution, np.append([0, 0, 0], solution[3:] - g1 * solution[2:-1] - g2 * solution[1:-2])
 
@@ -539,6 +538,7 @@ def constrained_oasisAR2(np.ndarray[DOUBLE, ndim=1] y, DOUBLE g1, DOUBLE g2,
     g12 = np.append(0, g2 * g11[:-1])
     g11g11 = np.cumsum(g11 * g11)
     g11g12 = np.cumsum(g11 * g12)
+    Sg11 = np.cumsum(g11)
 
     def oasis(y, active_set, solution, g11, g12, g11g11, g11g12):
         len_active_set = len(active_set)
@@ -578,11 +578,7 @@ def constrained_oasisAR2(np.ndarray[DOUBLE, ndim=1] y, DOUBLE g1, DOUBLE g2,
 
         # construct solution
         for c, (v, last, f, l) in enumerate(active_set):
-            solution[f] = v
-            if l > 1:
-                solution[f + 1] = (g1 * solution[f] + g2 * active_set[c - 1][1])
-                for i in xrange(2, l):
-                    solution[f + i] = (g1 * solution[f + i - 1] + g2 * solution[f + i - 2])
+            solution[f:f + l] = (g11[:l] * v + (0 if c == 0 else g12[:l] * active_set[c - 1][1]))
         solution[solution < 0] = 0
         return solution, active_set
 
@@ -599,7 +595,7 @@ def constrained_oasisAR2(np.ndarray[DOUBLE, ndim=1] y, DOUBLE g1, DOUBLE g2,
         # update lam
         for i, a in enumerate(active_set):
             l = a[3] - 1
-            tmp[a[2]] = (g11[:l + 1].sum() - g11g12[l] * tmp[a[2] - 1]) / g11g11[l]
+            tmp[a[2]] = (Sg11[l] - g11g12[l] * tmp[a[2] - 1]) / g11g11[l]
             for k in range(a[2] + 1, a[2] + a[3]):
                 tmp[k] = g1 * tmp[k - 1] + g2 * tmp[k - 2]
         aa = tmp.dot(tmp)
@@ -615,7 +611,7 @@ def constrained_oasisAR2(np.ndarray[DOUBLE, ndim=1] y, DOUBLE g1, DOUBLE g2,
                 ll = -dlam  # amount of change in last element of pool
             else:
                 l = a[3] - 1
-                a[0] -= (dlam * g11[:l + 1].sum() + g11g12[l] * ll) / g11g11[l]
+                a[0] -= (dlam * Sg11[l] + g11g12[l] * ll) / g11g11[l]
                 ll = -a[1]
                 a[1] = g11[l] * a[0] + g12[l] * active_set[i - 1][1]
                 ll += a[1]
