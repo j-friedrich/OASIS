@@ -86,7 +86,8 @@ def oasisAR1(np.ndarray[DOUBLE, ndim=1] y, DOUBLE g, DOUBLE lam=0, DOUBLE s_min=
     return solution, np.append(0, solution[1:] - g * solution[:-1])
 
 
-def constrained_oasisAR1(np.ndarray[DOUBLE, ndim=1] y, DOUBLE g, DOUBLE sn, bool optimize_b=False, int optimize_g=0, int decimate=1, int max_iter=5):
+def constrained_oasisAR1(np.ndarray[DOUBLE, ndim=1] y, DOUBLE g, DOUBLE sn, bool optimize_b=False,
+                         int optimize_g=0, int decimate=1, int max_iter=5, int penalty=1):
     """ Infer the most likely discretized spike train underlying an AR(1) fluorescence trace
 
     Solves the noise constrained sparse non-negative deconvolution problem
@@ -110,6 +111,8 @@ def constrained_oasisAR1(np.ndarray[DOUBLE, ndim=1] y, DOUBLE g, DOUBLE sn, bool
         Decimation factor for estimating hyper-parameters faster on decimated data.
     max_iter : int, optional, default 5
         Maximal number of iterations.
+    penalty : int, optional, default 1
+        Sparsity penalty. 1: min |s|_1  0: min |s|_0
 
     Returns
     -------
@@ -286,6 +289,8 @@ def constrained_oasisAR1(np.ndarray[DOUBLE, ndim=1] y, DOUBLE g, DOUBLE sn, bool
                 if abs(result['x'][1] - g) < 1e-3:
                     g_converged = True
                 b, g = result['x']
+                # explicit kernel, useful for constructing solution
+                h = np.exp(log(g) * np.arange(T))
                 for a in active_set:
                     q = h[:a[3]]
                     a[0] = q.dot(y[a[2]:a[2] + a[3]]) - (b / (1 - g) + lam) * (1 - g**a[3])
@@ -307,6 +312,7 @@ def constrained_oasisAR1(np.ndarray[DOUBLE, ndim=1] y, DOUBLE g, DOUBLE sn, bool
             RSS = res.dot(res)
 
     if decimate > 1:  # deal with full data
+        y = fluor
         lam = lam * (1 - g)
         g = g**(1. / decimate)
         lam = lam / (1 - g)
@@ -328,6 +334,38 @@ def constrained_oasisAR1(np.ndarray[DOUBLE, ndim=1] y, DOUBLE g, DOUBLE sn, bool
         solution = np.empty(T)
 
         solution, active_set = oasis(active_set, g, h, solution)
+
+    if penalty == 0:  # get (locally optimal) L0 solution
+        lls = [(active_set[i + 1][0] / active_set[i + 1][1] -
+                active_set[i][0] / active_set[i][1] * g**active_set[i][3])
+               for i in range(len(active_set) - 1)]
+        pos = [active_set[i + 1][2] for i in np.argsort(lls)[::-1]]
+        y -= b
+        res = -y
+        RSS = y.dot(y)
+        solution = np.zeros_like(y)
+        a_s = [[0, 1, 0, len(y)]]
+        for p in pos:
+            c = 0
+            while a_s[c][2] + a_s[c][3] <= p:
+                c += 1
+            # split current pool at pos
+            v, w, f, l = a_s[c]
+            q = h[:f - p + l]
+            a_s.insert(c + 1, [q.dot(y[p:f + l]), q.dot(q), p, f - p + l])
+            q = h[:p - f]
+            a_s[c] = [q.dot(y[f:p]), q.dot(q), f, p - f]
+            for i in [c, c + 1]:
+                v, w, f, l = a_s[i]
+                solution[f:f + l] = v / w * h[:l]
+            # calc RSS
+            # res = y - solution
+            # RSS = res.dot(res)
+            RSS -= res[a_s[c][2]:f + l].dot(res[a_s[c][2]:f + l])
+            res[a_s[c][2]:f + l] = solution[a_s[c][2]:f + l] - y[a_s[c][2]:f + l]
+            RSS += res[a_s[c][2]:f + l].dot(res[a_s[c][2]:f + l])
+            if RSS < thresh:
+                break
 
     return solution, np.append(0, solution[1:] - g * solution[:-1]), b, g, lam
 
