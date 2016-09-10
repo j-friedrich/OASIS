@@ -11,7 +11,7 @@ from scipy.io import loadmat
 from scipy.ndimage.filters import percentile_filter
 from oasis import oasisAR1, constrained_oasisAR1, oasisAR2, constrained_oasisAR2
 from functions import init_fig, simpleaxis, gen_data, foopsi, constrained_foopsi, \
-    onlineNNLS, estimate_parameters
+    onnls, estimate_parameters
 
 init_fig()
 # colors for colorblind from  http://www.cookbook-r.com/Graphs/Colors_(ggplot2)/
@@ -69,7 +69,7 @@ g = [1.7, -.712]
 sn = 1
 Y, trueC, trueSpikes = gen_data(g, sn, seed=3)
 N, T = Y.shape
-result_onnls = onlineNNLS(Y[0], g=g, lam=25)
+# result_onnls = onnls(Y[0], g=g, lam=25)
 result_oasis = oasisAR2(Y[0], g1=g[0], g2=g[1], lam=25)
 result_foopsi = foopsi(Y[0], g=np.array(g), lam=25)
 
@@ -130,7 +130,7 @@ spike_time = t_ephys[detected_spikes.astype(bool)]
 
 g, sn = estimate_parameters(y, p=2, fudge_factor=.99)
 c, s = foopsi(y - mu, g)[:2]
-result_onnls = onlineNNLS(y - mu, g=g, shift=300, window=600)
+# result_onnls = onnls(y - mu, g=g, shift=300, window=600)
 result_oasis = oasisAR2(y - mu, g1=g[0], g2=g[1])
 
 fig.add_axes([.54, .57, .46, .37])

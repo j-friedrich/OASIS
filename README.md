@@ -27,5 +27,7 @@ To clean up temporary files follow it by:
 The scripts to produce the figures and table are in the subfolder 'examples' with names obvious from the arXiv paper. 
 They can be run with `python examples/fig[1-6].py`. 
 
+To demonstrate how to use the methods on your own data, we included a demo jupyter notebook in the subfolder 'examples' as well.
+
 #### Other implementations
 * Matlab: https://github.com/zhoupc/OASIS_matlab
