@@ -6,7 +6,6 @@ an active set method for sparse nonnegative deconvolution
 import numpy as np
 import matplotlib.pyplot as plt
 from timeit import Timer
-import glob
 from scipy.io import loadmat
 from scipy.ndimage.filters import percentile_filter
 from oasis import oasisAR1, constrained_oasisAR1, oasisAR2, constrained_oasisAR2
@@ -17,7 +16,9 @@ init_fig()
 # colors for colorblind from  http://www.cookbook-r.com/Graphs/Colors_(ggplot2)/
 col = ['#0072B2', '#009E73', '#D55E00', '#E69F00',
        '#56B4E9', '#CC79A7', '#40e0d0', '#F0E442']
-datapath = "/Users/joe/Downloads/cai-1/GCaMP6s_9cells_Chen2013/processed_data/"
+# real data from Chen et al 2013, available at following URL
+# https://portal.nersc.gov/project/crcns/download/cai-1/GCaMP6s_9cells_Chen2013/processed_data.tar.gz
+filename = "/Users/joe/Downloads/data_20120627_cell2_002.mat"
 
 
 ################
@@ -104,9 +105,7 @@ plt.ylabel('Activity')
 
 # real data
 
-files = glob.glob(datapath + "*.mat")
-f = files[15]
-data = loadmat(f)
+data = loadmat(filename)
 fmean_roi = data['obj']['timeSeriesArrayHash'].item()[0]['value'].item()[0][
     0]['valueMatrix'].item().ravel()
 fmean_neuropil = data['obj']['timeSeriesArrayHash'].item()[0]['value'].item()[0][
@@ -225,7 +224,7 @@ plt.semilogy(range(len(solvers)), [np.mean(constrained_ts[s]) for s in solvers],
 plt.xticks(range(len(solvers)), ['O.', 'E.', 'M.', 'S.', 'G.'])
 plt.xlim(-.2, 4.2)
 plt.yticks(*[[.01, .1, 1]] * 2)
-plt.ylim(.003, 2.4)
+plt.ylim(.002, 2.4)
 plt.show()
 
 

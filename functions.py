@@ -6,6 +6,7 @@ import matplotlib.pyplot as plt
 from math import sqrt, log
 from oasis import constrained_oasisAR1
 import os
+from warnings import warn
 
 
 def init_fig():
@@ -121,7 +122,7 @@ def gen_sinusoidal_data(g=[.95], sn=.3, T=3000, framerate=30, firerate=.5, b=0, 
     return Y, truth, trueSpikes
 
 
-def deconvolve(y, g=(None,), sn=None, b=None, optimize_g=0, penalty=0, **kwargs):
+def deconvolve(y, g=(None,), sn=None, b=None, optimize_g=0, penalty=0, fudge_factor=None, **kwargs):
     """Infer the most likely discretized spike train underlying an fluorescence trace
 
     Solves the noise constrained sparse non-negative deconvolution problem
@@ -136,7 +137,7 @@ def deconvolve(y, g=(None,), sn=None, b=None, optimize_g=0, penalty=0, **kwargs)
         Parameters of the autoregressive model, cardinality equivalent to p.
         Estimated from the autocovariance of the data if no value is given.
     sn : float, optional, default None
-        Standard deviation of the noise distribution.  If no value is given, 
+        Standard deviation of the noise distribution.  If no value is given,
         then sn is estimated from the data based on power spectral density if not provided.
     b : float, optional, default None
         Fluorescence baseline value. If no value is given, then b is optimized.
@@ -163,7 +164,9 @@ def deconvolve(y, g=(None,), sn=None, b=None, optimize_g=0, penalty=0, **kwargs)
     """
 
     if g[0] is None or sn is None:
-        est = estimate_parameters(y, p=len(g), fudge_factor=.98)
+        if fudge_factor is None:
+            fudge_factor = [.98, 1][len(g) - 1]
+        est = estimate_parameters(y, p=len(g), fudge_factor=fudge_factor)
         if g[0] is None:
             g = est[0]
         if sn is None:
@@ -173,8 +176,9 @@ def deconvolve(y, g=(None,), sn=None, b=None, optimize_g=0, penalty=0, **kwargs)
                                     optimize_g=optimize_g, penalty=penalty, **kwargs)
     elif len(g) == 2:
         if optimize_g > 0:
-            raise NotImplementedError(
-                'Optimization of AR parameters currenty only supported for AR(1)')
+            #     raise NotImplementedError(
+            #         'Optimization of AR parameters currenty only supported for AR(1)')
+            warn("Currenlty only the decay time but not the rise time is optimized (on decimated data)")
         return constrained_onnlsAR2(y, g, sn, optimize_b=True if b is None else False,
                                     optimize_g=optimize_g, penalty=penalty, **kwargs)
     else:
@@ -362,7 +366,7 @@ def _nnls(KK, Ky, s=None, mask=None, tol=1e-9, max_iter=None):
     return tmp
 
 
-def onnls(y, g, lam=0, shift=100, window=200, mask=None, tol=1e-9, max_iter=None):
+def onnls(y, g, lam=0, shift=100, window=None, mask=None, tol=1e-9, max_iter=None):
     """ Infer the most likely discretized spike train underlying an AR(2) fluorescence trace
 
     Solves the sparse non-negative deconvolution problem
@@ -382,7 +386,7 @@ def onnls(y, g, lam=0, shift=100, window=200, mask=None, tol=1e-9, max_iter=None
         Sparsity penalty parameter lambda.
     shift : int, optional, default 100
         Number of frames by which to shift window from on run of NNLS to the next.
-    window : int, optional, default 200
+    window : int, optional, default None (200 or larger dependend on g)
         Window size.
     mask : array of bool, shape (n,), optional, default (True,)*n
         Mask to restrict potential spike times considered.
@@ -408,7 +412,11 @@ def onnls(y, g, lam=0, shift=100, window=200, mask=None, tol=1e-9, max_iter=None
     T = len(y)
     if mask is None:
         mask = np.ones(T, dtype=bool)
-    w = window
+    if window is None:
+        w = max(200, len(g) if len(g) > 2 else int(-5 / log(g[0] if len(g) == 1 else
+                                                         (g[0] + sqrt(g[0] * g[0] + 4 * g[1])) / 2)))
+    else:
+        w = window
     K = np.zeros((w, w))
     if len(g) == 1:  # kernel for AR(1)
         _y = y - lam * (1 - g[0])
@@ -449,7 +457,7 @@ def onnls(y, g, lam=0, shift=100, window=200, mask=None, tol=1e-9, max_iter=None
     return c, s
 
 
-def constrained_onnlsAR2(y, g, sn, optimize_b=True, optimize_g=0, decimate=5, shift=100, window=200,
+def constrained_onnlsAR2(y, g, sn, optimize_b=True, optimize_g=0, decimate=5, shift=100, window=None,
                          tol=1e-9, max_iter=1, penalty=1):
     """ Infer the most likely discretized spike train underlying an AR(2) fluorescence trace
 
@@ -472,6 +480,12 @@ def constrained_onnlsAR2(y, g, sn, optimize_b=True, optimize_g=0, decimate=5, sh
         No optimization if optimize_g=0.
     decimate : int, optional, default 5
         Decimation factor for estimating hyper-parameters faster on decimated data.
+    shift : int, optional, default 100
+        Number of frames by which to shift window from on run of NNLS to the next.
+    window : int, optional, default None (200 or larger dependend on g)
+        Window size.
+    tol : float, optional, default 1e-9
+        Tolerance parameter.
     max_iter : int, optional, default 1
         Maximal number of iterations.
     penalty : int, optional, default 1
@@ -499,6 +513,8 @@ def constrained_onnlsAR2(y, g, sn, optimize_b=True, optimize_g=0, decimate=5, sh
     T = len(y)
     d = (g[0] + sqrt(g[0] * g[0] + 4 * g[1])) / 2
     r = (g[0] - sqrt(g[0] * g[0] + 4 * g[1])) / 2
+    if window is None:
+        window = int(max(200, -5 / log(d)))
     if not optimize_g:
         g11 = (np.exp(log(d) * np.arange(1, T + 1)) -
                np.exp(log(r) * np.arange(1, T + 1))) / (d - r)
@@ -535,7 +551,7 @@ def constrained_onnlsAR2(y, g, sn, optimize_b=True, optimize_g=0, decimate=5, sh
         lam = 2 * sn * np.linalg.norm(g11)
         mask = None
     # run ONNLS
-    c, s = onnls(y - b, g, lam=lam, mask=mask)
+    c, s = onnls(y - b, g, lam=lam, mask=mask, shift=shift, window=window, tol=tol)
 
     if not optimize_b:  # don't optimize b, just the dual variable lambda
         for i in range(max_iter - 1):
@@ -575,7 +591,7 @@ def constrained_onnlsAR2(y, g, sn, optimize_b=True, optimize_g=0, decimate=5, sh
                 db = -bb / aa
             # perform shift
             b += db
-            c, s = onnls(y - b, g, lam=lam, mask=mask)
+            c, s = onnls(y - b, g, lam=lam, mask=mask, shift=shift, window=window, tol=tol)
             db = np.mean(y - c) - b
             b += db
             lam -= db / f_lam
@@ -609,7 +625,7 @@ def constrained_onnlsAR2(y, g, sn, optimize_b=True, optimize_g=0, decimate=5, sh
                 db = -bb / aa
             # perform shift
             b += db
-            c, s = onnls(y - b, g, lam=lam, mask=mask)
+            c, s = onnls(y - b, g, lam=lam, mask=mask, shift=shift, window=window, tol=tol)
             db = np.mean(y - c) - b
             b += db
             lam -= db / f_lam
@@ -653,7 +669,7 @@ def constrained_onnlsAR2(y, g, sn, optimize_b=True, optimize_g=0, decimate=5, sh
 
 # functions to estimate AR coefficients and sn from
 # https://github.com/agiovann/Constrained_NMF.git
-def estimate_parameters(y, p=2, range_ff=[0.25, 0.5], method='logmexp', lags=5, fudge_factor=1.):
+def estimate_parameters(y, p=2, range_ff=[0.25, 0.5], method='mean', lags=5, fudge_factor=1.):
     """
     Estimate noise standard deviation and AR coefficients
 
@@ -665,8 +681,8 @@ def estimate_parameters(y, p=2, range_ff=[0.25, 0.5], method='logmexp', lags=5, 
         number of additional lags where he autocovariance is computed
     range_ff : (1,2) array, nonnegative, max value <= 0.5
         range of frequency (x Nyquist rate) over which the spectrum is averaged
-    method : string
-        method of averaging: Mean, median, exponentiated mean of logvalues (default)
+    method : string, optional, default 'mean'
+        method of averaging: Mean, median, exponentiated mean of logvalues
     fudge_factor : float (0< fudge_factor <= 1)
         shrinkage factor to reduce bias
     """
@@ -720,7 +736,7 @@ def estimate_time_constant(y, p=2, sn=None, lags=5, fudge_factor=1.):
     return g.flatten()
 
 
-def GetSn(y, range_ff=[0.25, 0.5], method='logmexp'):
+def GetSn(y, range_ff=[0.25, 0.5], method='mean'):
     """
     Estimate noise power through the power spectral density over the range of large frequencies
 
@@ -731,8 +747,8 @@ def GetSn(y, range_ff=[0.25, 0.5], method='logmexp'):
         one entry per time-bin.
     range_ff : (1,2) array, nonnegative, max value <= 0.5
         range of frequency (x Nyquist rate) over which the spectrum is averaged
-    method : string
-        method of averaging: Mean, median, exponentiated mean of logvalues (default)
+    method : string, optional, default 'mean'
+        method of averaging: Mean, median, exponentiated mean of logvalues
 
     Returns
     -------
