@@ -3,19 +3,22 @@ import cvxpy as cvx
 import scipy
 import scipy.signal
 import matplotlib.pyplot as plt
-from math import sqrt, log
-from oasis import constrained_oasisAR1
+from math import sqrt, log, exp
+from oasis import constrained_oasisAR1, oasisAR1
 import os
 from warnings import warn
+from scipy.optimize import minimize
 
 
 def init_fig():
     """change some defaults for plotting"""
     plt.rc('figure', facecolor='white', dpi=90, frameon=False)
-    plt.rc('font', size=30, **{'family': 'sans-serif', 'sans-serif': ['Computer Modern']})
+    plt.rc('font', size=30, **{'family': 'sans-serif',
+                               'sans-serif': ['Computer Modern']})
     plt.rc('lines', lw=2)
     plt.rc('text', usetex=True)
-    plt.rc('legend', **{'fontsize': 24, 'frameon': False, 'labelspacing': .3, 'handletextpad': .3})
+    plt.rc('legend', **{'fontsize': 24, 'frameon': False,
+                        'labelspacing': .3, 'handletextpad': .3})
     plt.rc('axes', linewidth=2)
     plt.rc('xtick.major', size=10, width=1.5)
     plt.rc('ytick.major', size=10, width=1.5)
@@ -178,7 +181,8 @@ def deconvolve(y, g=(None,), sn=None, b=None, optimize_g=0, penalty=0, fudge_fac
         if optimize_g > 0:
             #     raise NotImplementedError(
             #         'Optimization of AR parameters currenty only supported for AR(1)')
-            warn("Currenlty only the decay time but not the rise time is optimized (on decimated data)")
+            warn("Optimization of AR parameters is already fairly stable for AR(1),",
+                 "but slower and more experimental for AR(2)")
         return constrained_onnlsAR2(y, g, sn, optimize_b=True if b is None else False,
                                     optimize_g=optimize_g, penalty=penalty, **kwargs)
     else:
@@ -218,7 +222,8 @@ def foopsi(y, g, lam=0, b=0, solver='ECOS'):
     # construct deconvolution matrix  (s = G*c)
     G = scipy.sparse.dia_matrix((np.ones((1, T)), [0]), (T, T))
     for i, gi in enumerate(g):
-        G = G + scipy.sparse.dia_matrix((-gi * np.ones((1, T)), [-1 - i]), (T, T))
+        G = G + \
+            scipy.sparse.dia_matrix((-gi * np.ones((1, T)), [-1 - i]), (T, T))
     c = cvx.Variable(T)  # calcium at each time step
     # objective = cvx.Minimize(.5 * cvx.sum_squares(c - y) + lam * cvx.norm(G * c, 1))
     # cvxpy had sometime trouble to find above solution for G*c, therefore
@@ -270,11 +275,13 @@ def constrained_foopsi(y, g, sn, b=0, solver='ECOS'):
     # construct deconvolution matrix  (s = G*c)
     G = scipy.sparse.dia_matrix((np.ones((1, T)), [0]), (T, T))
     for i, gi in enumerate(g):
-        G = G + scipy.sparse.dia_matrix((-gi * np.ones((1, T)), [-1 - i]), (T, T))
+        G = G + \
+            scipy.sparse.dia_matrix((-gi * np.ones((1, T)), [-1 - i]), (T, T))
     c = cvx.Variable(T)  # calcium at each time step
     if b is None:
         b = cvx.Variable(1)
-    objective = cvx.Minimize(cvx.norm(c, 1))  # cvxpy had sometime trouble to find solution for G*c
+    # cvxpy had sometime trouble to find solution for G*c
+    objective = cvx.Minimize(cvx.norm(c, 1))
     constraints = [G * c >= 0]
     constraints.append(cvx.sum_squares(b + c - y) <= sn * sn * T)
     prob = cvx.Problem(objective, constraints)
@@ -355,7 +362,8 @@ def _nnls(KK, Ky, s=None, mask=None, tol=1e-9, max_iter=None):
             try:
                 mu = np.linalg.inv(KK[P][:, P]).dot(Ky[P])
             except:
-                mu = np.linalg.inv(KK[P][:, P] + tol * np.eye(P.sum())).dot(Ky[P])
+                mu = np.linalg.inv(KK[P][:, P] + tol *
+                                   np.eye(P.sum())).dot(Ky[P])
                 print r'added $\epsilon$I to avoid singularity'
         s[P] = mu.copy()
         l = Ky - KK[:, P].dot(s[P])
@@ -414,7 +422,7 @@ def onnls(y, g, lam=0, shift=100, window=None, mask=None, tol=1e-9, max_iter=Non
         mask = np.ones(T, dtype=bool)
     if window is None:
         w = max(200, len(g) if len(g) > 2 else int(-5 / log(g[0] if len(g) == 1 else
-                                                         (g[0] + sqrt(g[0] * g[0] + 4 * g[1])) / 2)))
+                                                            (g[0] + sqrt(g[0] * g[0] + 4 * g[1])) / 2)))
     else:
         w = window
     K = np.zeros((w, w))
@@ -430,7 +438,8 @@ def onnls(y, g, lam=0, shift=100, window=None, mask=None, tol=1e-9, max_iter=Non
         _y[-1] = y[-1] - lam
         d = (g[0] + sqrt(g[0] * g[0] + 4 * g[1])) / 2
         r = (g[0] - sqrt(g[0] * g[0] + 4 * g[1])) / 2
-        h = (np.exp(log(d) * np.arange(1, w + 1)) - np.exp(log(r) * np.arange(1, w + 1))) / (d - r)
+        h = (np.exp(log(d) * np.arange(1, w + 1)) -
+             np.exp(log(r) * np.arange(1, w + 1))) / (d - r)
         for i in range(w):
             K[i:, i] = h[:w - i]
     else:  # arbitrary kernel
@@ -449,7 +458,8 @@ def onnls(y, g, lam=0, shift=100, window=None, mask=None, tol=1e-9, max_iter=Non
         # subtract contribution of spikes already committed to
         _y[i:i + w] -= K[:, :shift].dot(s[i:i + shift])
     s[i + shift:] = _nnls(KK[-(T - i - shift):, -(T - i - shift):],
-                          K[:T - i - shift, :T - i - shift].T.dot(_y[i + shift:]),
+                          K[:T - i - shift, :T - i -
+                              shift].T.dot(_y[i + shift:]),
                           s[i + shift:], mask=mask[i + shift:])
     c = np.zeros_like(s)
     for t in np.where(s > tol)[0]:
@@ -457,8 +467,8 @@ def onnls(y, g, lam=0, shift=100, window=None, mask=None, tol=1e-9, max_iter=Non
     return c, s
 
 
-def constrained_onnlsAR2(y, g, sn, optimize_b=True, optimize_g=0, decimate=5, shift=100, window=None,
-                         tol=1e-9, max_iter=1, penalty=1):
+def constrained_onnlsAR2(y, g, sn, optimize_b=True, optimize_g=0, decimate=5,
+                         shift=100, window=None, tol=1e-9, max_iter=1, penalty=1):
     """ Infer the most likely discretized spike train underlying an AR(2) fluorescence trace
 
     Solves the noise constrained sparse non-negative deconvolution problem
@@ -523,14 +533,20 @@ def constrained_onnlsAR2(y, g, sn, optimize_b=True, optimize_g=0, decimate=5, sh
         g11g12 = np.cumsum(g11 * g12)
         Sg11 = np.cumsum(g11)
         f_lam = 1 - g[0] - g[1]
+    elif decimate == 0:  # need to run AR1 anyways for estimating AR coeffs
+        decimate = 1
     thresh = sn * sn * T
     # get initial estimate of b and lam on downsampled data using AR1 model
     if decimate > 0:
         _, s, b, aa, lam = constrained_oasisAR1(y.reshape(-1, decimate).mean(1),
-                                                d**decimate, sn / sqrt(decimate),
+                                                d**decimate, sn /
+                                                sqrt(decimate),
                                                 optimize_b=optimize_b, optimize_g=optimize_g)
-        if optimize_g > 0:
+        if optimize_g:
             d = aa**(1. / decimate)
+            if decimate > 1:
+                s = oasisAR1(y, d, lam=lam * (1 - aa) / (1 - d))[1]
+            r = estimate_time_constant(s, 1, fudge_factor=1, lags=10)[0]
             g[0] = d + r
             g[1] = -d * r
             g11 = (np.exp(log(d) * np.arange(1, T + 1)) -
@@ -541,8 +557,8 @@ def constrained_onnlsAR2(y, g, sn, optimize_b=True, optimize_g=0, decimate=5, sh
             Sg11 = np.cumsum(g11)
             f_lam = 1 - g[0] - g[1]
         lam *= (1 - d**decimate) / f_lam
-        ff = np.hstack([a * decimate + np.arange(-decimate, decimate)
-                        for a in np.where(s > 1e-6)[0]])  # this window size seems necessary and sufficient
+        # this window size seems necessary and sufficient
+        ff = np.hstack([a + np.arange(-1, 1) for a in np.where(s > 1e-6)[0]])
         ff = np.unique(ff[(ff >= 0) * (ff < T)])
         mask = np.zeros(T, dtype=bool)
         mask[ff] = True
@@ -551,7 +567,8 @@ def constrained_onnlsAR2(y, g, sn, optimize_b=True, optimize_g=0, decimate=5, sh
         lam = 2 * sn * np.linalg.norm(g11)
         mask = None
     # run ONNLS
-    c, s = onnls(y - b, g, lam=lam, mask=mask, shift=shift, window=window, tol=tol)
+    c, s = onnls(y - b, g, lam=lam, mask=mask,
+                 shift=shift, window=window, tol=tol)
 
     if not optimize_b:  # don't optimize b, just the dual variable lambda
         for i in range(max_iter - 1):
@@ -563,10 +580,12 @@ def constrained_onnlsAR2(y, g, sn, optimize_b=True, optimize_g=0, decimate=5, sh
             tmp = np.empty(T)
             ls = np.append(np.where(s > 1e-6)[0], T)
             l = ls[0]
-            tmp[:l] = (1 + d) / (1 + d**l) * np.exp(log(d) * np.arange(l))  # first pool
+            tmp[:l] = (1 + d) / (1 + d**l) * \
+                np.exp(log(d) * np.arange(l))  # first pool
             for i, f in enumerate(ls[:-1]):  # all other pools
                 l = ls[i + 1] - f - 1
-                # if and elif correct last 2 time points for |s|_1 instead |c|_1
+                # if and elif correct last 2 time points for |s|_1 instead
+                # |c|_1
                 if i == len(ls) - 2:  # last pool
                     tmp[f] = (1. / f_lam if l == 0 else
                               (Sg11[l] + g[1] / f_lam * g11[l - 1]
@@ -591,7 +610,8 @@ def constrained_onnlsAR2(y, g, sn, optimize_b=True, optimize_g=0, decimate=5, sh
                 db = -bb / aa
             # perform shift
             b += db
-            c, s = onnls(y - b, g, lam=lam, mask=mask, shift=shift, window=window, tol=tol)
+            c, s = onnls(y - b, g, lam=lam, mask=mask,
+                         shift=shift, window=window, tol=tol)
             db = np.mean(y - c) - b
             b += db
             lam -= db / f_lam
@@ -600,6 +620,7 @@ def constrained_onnlsAR2(y, g, sn, optimize_b=True, optimize_g=0, decimate=5, sh
         db = np.mean(y - c) - b
         b += db
         lam -= db / (1 - g[0] - g[1])
+        g_converged = False
         for i in range(max_iter - 1):
             res = y - c - b
             RSS = res.dot(res)
@@ -609,10 +630,12 @@ def constrained_onnlsAR2(y, g, sn, optimize_b=True, optimize_g=0, decimate=5, sh
             tmp = np.empty(T)
             ls = np.append(np.where(s > 1e-6)[0], T)
             l = ls[0]
-            tmp[:l] = (1 + d) / (1 + d**l) * np.exp(log(d) * np.arange(l))  # first pool
+            tmp[:l] = (1 + d) / (1 + d**l) * \
+                np.exp(log(d) * np.arange(l))  # first pool
             for i, f in enumerate(ls[:-1]):  # all other pools
                 l = ls[i + 1] - f
-                tmp[f] = (Sg11[l - 1] - g11g12[l - 1] * tmp[f - 1]) / g11g11[l - 1]
+                tmp[f] = (Sg11[l - 1] - g11g12[l - 1]
+                          * tmp[f - 1]) / g11g11[l - 1]
                 tmp[f + 1:f + l] = g11[1:l] * tmp[f] + g12[1:l] * tmp[f - 1]
             tmp -= tmp.mean()
             aa = tmp.dot(tmp)
@@ -625,10 +648,41 @@ def constrained_onnlsAR2(y, g, sn, optimize_b=True, optimize_g=0, decimate=5, sh
                 db = -bb / aa
             # perform shift
             b += db
-            c, s = onnls(y - b, g, lam=lam, mask=mask, shift=shift, window=window, tol=tol)
+            c, s = onnls(y - b, g, lam=lam, mask=mask,
+                         shift=shift, window=window, tol=tol)
+            # update b and lam
             db = np.mean(y - c) - b
             b += db
             lam -= db / f_lam
+
+            # update g and b
+            if optimize_g and (not g_converged):
+                lengths = np.where(s)[0][1:] - np.where(s)[0][:-1]
+
+                def getRSS(y, opt):
+                    b, ld, lr = opt
+                    if ld < lr:
+                        return 1e3 * thresh
+                    d, r = exp(ld), exp(lr)
+                    g1, g2 = d + r, -d * r
+                    tmp = b + onnls(y - b, [g1, g2], lam,
+                                    mask=(s > 1e-2 * s.max()))[0] - y
+                    return tmp.dot(tmp)
+
+                result = minimize(lambda x: getRSS(y, x), (b, log(d), log(r)),
+                                  bounds=((None, None), (None, -1e-4), (None, -1e-3)), method='L-BFGS-B',
+                                  options={'gtol': 1e-04, 'maxiter': 10, 'ftol': 1e-05})
+                if abs(result['x'][1] - log(d)) < 1e-3:
+                    g_converged = True
+                b, ld, lr = result['x']
+                d, r = exp(ld), exp(lr)
+                g = (d + r, -d * r)
+                c, s = onnls(y - b, g, lam=lam, mask=mask,
+                             shift=shift, window=window, tol=tol)
+                # update b and lam
+                db = np.mean(y - c) - b
+                b += db
+                lam -= db
 
     if penalty == 0:  # get (locally optimal) L0 solution
 
