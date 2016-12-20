@@ -125,7 +125,8 @@ def gen_sinusoidal_data(g=[.95], sn=.3, T=3000, framerate=30, firerate=.5, b=0, 
     return Y, truth, trueSpikes
 
 
-def deconvolve(y, g=(None,), sn=None, b=None, optimize_g=0, penalty=0, fudge_factor=None, **kwargs):
+def deconvolve(y, g=(None,), sn=None, b=None, b_nonneg=True,
+               optimize_g=0, penalty=0, **kwargs):
     """Infer the most likely discretized spike train underlying an fluorescence trace
 
     Solves the noise constrained sparse non-negative deconvolution problem
@@ -144,6 +145,8 @@ def deconvolve(y, g=(None,), sn=None, b=None, optimize_g=0, penalty=0, fudge_fac
         then sn is estimated from the data based on power spectral density if not provided.
     b : float, optional, default None
         Fluorescence baseline value. If no value is given, then b is optimized.
+    b_nonneg: bool, optional, default True
+        Enforce strictly non-negative baseline if True.
     optimize_g : int, optional, default 0
         Number of large, isolated events to consider for optimizing g.
         If optimize_g=0 the provided or estimated g is not further optimized.
@@ -167,9 +170,7 @@ def deconvolve(y, g=(None,), sn=None, b=None, optimize_g=0, penalty=0, fudge_fac
     """
 
     if g[0] is None or sn is None:
-        if fudge_factor is None:
-            # fudge_factor = [.98, 1][len(g) - 1]
-            fudge_factor = .96 if optimize_g else .98
+        fudge_factor = .97 if (optimize_g and len(g) == 1) else .98
         est = estimate_parameters(y, p=len(g), fudge_factor=fudge_factor)
         if g[0] is None:
             g = est[0]
@@ -177,15 +178,15 @@ def deconvolve(y, g=(None,), sn=None, b=None, optimize_g=0, penalty=0, fudge_fac
             sn = est[1]
     if len(g) == 1:
         return constrained_oasisAR1(y, g[0], sn, optimize_b=True if b is None else False,
-                                    optimize_g=optimize_g, penalty=penalty, **kwargs)
+                                    b_nonneg=b_nonneg, optimize_g=optimize_g,
+                                    penalty=penalty, **kwargs)
     elif len(g) == 2:
         if optimize_g > 0:
-            #     raise NotImplementedError(
-            #         'Optimization of AR parameters currenty only supported for AR(1)')
-            warn("Optimization of AR parameters is already fairly stable for AR(1),",
+            warn("Optimization of AR parameters is already fairly stable for AR(1), "
                  "but slower and more experimental for AR(2)")
         return constrained_onnlsAR2(y, g, sn, optimize_b=True if b is None else False,
-                                    optimize_g=optimize_g, penalty=penalty, **kwargs)
+                                    b_nonneg=b_nonneg, optimize_g=optimize_g,
+                                    penalty=penalty, **kwargs)
     else:
         print('g must have length 1 or 2, cause only AR(1) and AR(2) are currently implemented')
 
@@ -466,7 +467,7 @@ def onnls(y, g, lam=0, shift=100, window=None, mask=None, tol=1e-9, max_iter=Non
     return c, s
 
 
-def constrained_onnlsAR2(y, g, sn, optimize_b=True, optimize_g=0, decimate=5,
+def constrained_onnlsAR2(y, g, sn, optimize_b=True, b_nonneg=True, optimize_g=0, decimate=5,
                          shift=100, window=None, tol=1e-9, max_iter=1, penalty=1):
     """ Infer the most likely discretized spike train underlying an AR(2) fluorescence trace
 
@@ -484,6 +485,8 @@ def constrained_onnlsAR2(y, g, sn, optimize_b=True, optimize_g=0, decimate=5,
         Standard deviation of the noise distribution.
     optimize_b : bool, optional, default True
         Optimize baseline if True else it is set to 0, see y.
+    b_nonneg: bool, optional, default True
+        Enforce strictly non-negative baseline if True.
     optimize_g : int, optional, default 0
         Number of large, isolated events to consider for optimizing g.
         No optimization if optimize_g=0.
@@ -538,14 +541,14 @@ def constrained_onnlsAR2(y, g, sn, optimize_b=True, optimize_g=0, decimate=5,
     # get initial estimate of b and lam on downsampled data using AR1 model
     if decimate > 0:
         _, s, b, aa, lam = constrained_oasisAR1(y.reshape(-1, decimate).mean(1),
-                                                d**decimate, sn /
-                                                sqrt(decimate),
-                                                optimize_b=optimize_b, optimize_g=optimize_g)
+                                                d**decimate, sn / sqrt(decimate),
+                                                optimize_b=optimize_b, b_nonneg=b_nonneg,
+                                                optimize_g=optimize_g)
         if optimize_g:
             d = aa**(1. / decimate)
             if decimate > 1:
-                s = oasisAR1(y, d, lam=lam * (1 - aa) / (1 - d))[1]
-            r = estimate_time_constant(s, 1, fudge_factor=1, lags=10)[0]
+                s = oasisAR1(y - b, d, lam=lam * (1 - aa) / (1 - d))[1]
+            r = estimate_time_constant(s, 1, fudge_factor=.98)[0]
             g[0] = d + r
             g[1] = -d * r
             g11 = (np.exp(log(d) * np.arange(1, T + 1)) -
@@ -555,9 +558,12 @@ def constrained_onnlsAR2(y, g, sn, optimize_b=True, optimize_g=0, decimate=5,
             g11g12 = np.cumsum(g11 * g12)
             Sg11 = np.cumsum(g11)
             f_lam = 1 - g[0] - g[1]
+        elif decimate > 1:
+            s = oasisAR1(y - b, d, lam=lam * (1 - aa) / (1 - d))[1]
         lam *= (1 - d**decimate) / f_lam
+        # s = oasisAR1(s, r)[1]
         # this window size seems necessary and sufficient
-        ff = np.hstack([a + np.arange(-1, 1) for a in np.where(s > 1e-6)[0]])
+        ff = np.hstack([a + np.arange(-2, 2) for a in np.where(s > s.max() / 10.)[0]])
         ff = np.unique(ff[(ff >= 0) * (ff < T)])
         mask = np.zeros(T, dtype=bool)
         mask[ff] = True
@@ -565,6 +571,8 @@ def constrained_onnlsAR2(y, g, sn, optimize_b=True, optimize_g=0, decimate=5,
         b = np.percentile(y, 15) if optimize_b else 0
         lam = 2 * sn * np.linalg.norm(g11)
         mask = None
+    if b_nonneg:
+        b = max(b, 0)
     # run ONNLS
     c, s = onnls(y - b, g, lam=lam, mask=mask,
                  shift=shift, window=window, tol=tol)
@@ -579,12 +587,10 @@ def constrained_onnlsAR2(y, g, sn, optimize_b=True, optimize_g=0, decimate=5,
             tmp = np.empty(T)
             ls = np.append(np.where(s > 1e-6)[0], T)
             l = ls[0]
-            tmp[:l] = (1 + d) / (1 + d**l) * \
-                np.exp(log(d) * np.arange(l))  # first pool
+            tmp[:l] = (1 + d) / (1 + d**l) * np.exp(log(d) * np.arange(l))  # first pool
             for i, f in enumerate(ls[:-1]):  # all other pools
                 l = ls[i + 1] - f - 1
-                # if and elif correct last 2 time points for |s|_1 instead
-                # |c|_1
+                # if and elif correct last 2 time points for |s|_1 instead |c|_1
                 if i == len(ls) - 2:  # last pool
                     tmp[f] = (1. / f_lam if l == 0 else
                               (Sg11[l] + g[1] / f_lam * g11[l - 1]
@@ -616,7 +622,7 @@ def constrained_onnlsAR2(y, g, sn, optimize_b=True, optimize_g=0, decimate=5,
             lam -= db / f_lam
 
     else:  # optimize b
-        db = np.mean(y - c) - b
+        db = max(np.mean(y - c), 0 if b_nonneg else -np.inf) - b
         b += db
         lam -= db / (1 - g[0] - g[1])
         g_converged = False
@@ -629,12 +635,10 @@ def constrained_onnlsAR2(y, g, sn, optimize_b=True, optimize_g=0, decimate=5,
             tmp = np.empty(T)
             ls = np.append(np.where(s > 1e-6)[0], T)
             l = ls[0]
-            tmp[:l] = (1 + d) / (1 + d**l) * \
-                np.exp(log(d) * np.arange(l))  # first pool
+            tmp[:l] = (1 + d) / (1 + d**l) * np.exp(log(d) * np.arange(l))  # first pool
             for i, f in enumerate(ls[:-1]):  # all other pools
                 l = ls[i + 1] - f
-                tmp[f] = (Sg11[l - 1] - g11g12[l - 1]
-                          * tmp[f - 1]) / g11g11[l - 1]
+                tmp[f] = (Sg11[l - 1] - g11g12[l - 1] * tmp[f - 1]) / g11g11[l - 1]
                 tmp[f + 1:f + l] = g11[1:l] * tmp[f] + g12[1:l] * tmp[f - 1]
             tmp -= tmp.mean()
             aa = tmp.dot(tmp)
@@ -646,11 +650,13 @@ def constrained_onnlsAR2(y, g, sn, optimize_b=True, optimize_g=0, decimate=5,
                 os.write(1, 'shit happens\n')
                 db = -bb / aa
             # perform shift
+            if b_nonneg:
+                db = max(db, -b)
             b += db
             c, s = onnls(y - b, g, lam=lam, mask=mask,
                          shift=shift, window=window, tol=tol)
             # update b and lam
-            db = np.mean(y - c) - b
+            db = max(np.mean(y - c), 0 if b_nonneg else -np.inf) - b
             b += db
             lam -= db / f_lam
 
@@ -669,7 +675,8 @@ def constrained_onnlsAR2(y, g, sn, optimize_b=True, optimize_g=0, decimate=5,
                     return tmp.dot(tmp)
 
                 result = minimize(lambda x: getRSS(y, x), (b, log(d), log(r)),
-                                  bounds=((None, None), (None, -1e-4), (None, -1e-3)), method='L-BFGS-B',
+                                  bounds=((0 if b_nonneg else None, None),
+                                          (None, -1e-4), (None, -1e-3)), method='L-BFGS-B',
                                   options={'gtol': 1e-04, 'maxiter': 10, 'ftol': 1e-05})
                 if abs(result['x'][1] - log(d)) < 1e-3:
                     g_converged = True
@@ -679,7 +686,7 @@ def constrained_onnlsAR2(y, g, sn, optimize_b=True, optimize_g=0, decimate=5,
                 c, s = onnls(y - b, g, lam=lam, mask=mask,
                              shift=shift, window=window, tol=tol)
                 # update b and lam
-                db = np.mean(y - c) - b
+                db = max(np.mean(y - c), 0 if b_nonneg else -np.inf) - b
                 b += db
                 lam -= db
 
