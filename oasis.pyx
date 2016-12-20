@@ -91,8 +91,9 @@ def oasisAR1(np.ndarray[DOUBLE, ndim=1] y, DOUBLE g, DOUBLE lam=0, DOUBLE s_min=
     return solution, np.append(0, solution[1:] - g * solution[:-1])
 
 
-def constrained_oasisAR1(np.ndarray[DOUBLE, ndim=1] y, DOUBLE g, DOUBLE sn, bool optimize_b=False,
-                         int optimize_g=0, int decimate=1, int max_iter=5, int penalty=1):
+def constrained_oasisAR1(np.ndarray[DOUBLE, ndim=1] y, DOUBLE g, DOUBLE sn,
+                         bool optimize_b=False, bool b_nonneg=True, int optimize_g=0,
+                         int decimate=1, int max_iter=5, int penalty=1):
     """ Infer the most likely discretized spike train underlying an AR(1) fluorescence trace
 
     Solves the noise constrained sparse non-negative deconvolution problem
@@ -109,6 +110,8 @@ def constrained_oasisAR1(np.ndarray[DOUBLE, ndim=1] y, DOUBLE g, DOUBLE sn, bool
         Standard deviation of the noise distribution.
     optimize_b : bool, optional, default False
         Optimize baseline if True else it is set to 0, see y.
+    b_nonneg: bool, optional, default True
+        Enforce strictly non-negative baseline if True.
     optimize_g : int, optional, default 0
         Number of large, isolated events to consider for optimizing g.
         No optimization if optimize_g=0.
@@ -271,6 +274,8 @@ def constrained_oasisAR1(np.ndarray[DOUBLE, ndim=1] y, DOUBLE g, DOUBLE sn, bool
 
     else:  # optimize b and dependend on optimize_g g too
         b = np.percentile(y, 15)  # initial estimate of baseline
+        if b_nonneg:
+            b = max(b, 0)
         if T < 5000:
             for a in active_set:   # subtract baseline
                 a[0] -= b
@@ -278,7 +283,7 @@ def constrained_oasisAR1(np.ndarray[DOUBLE, ndim=1] y, DOUBLE g, DOUBLE sn, bool
         else:
             solution, active_set = oasis1strun(y - b, g, h, solution)
         # update b and lam
-        db = np.mean(y - solution) - b
+        db = max(np.mean(y - solution), 0 if b_nonneg else -np.inf) - b
         b += db
         lam -= db / (1 - g)
         # correct last pool
@@ -310,12 +315,14 @@ def constrained_oasisAR1(np.ndarray[DOUBLE, ndim=1] y, DOUBLE g, DOUBLE sn, bool
             else:
                 # print 'shit happens'
                 dphi = -bb / aa
+            if b_nonneg:
+                dphi = max(dphi, -b / (1 - g))
             b += dphi * (1 - g)
             for a in active_set:     # perform shift
                 a[0] -= dphi * (1 - g**a[3])
             solution, active_set = oasis(active_set, g, h, solution)
             # update b and lam
-            db = np.mean(y - solution) - b
+            db = max(np.mean(y - solution), 0 if b_nonneg else -np.inf) - b
             b += db
             dlam = -db / (1 - g)
             lam += dlam
@@ -336,16 +343,19 @@ def constrained_oasisAR1(np.ndarray[DOUBLE, ndim=1] y, DOUBLE g, DOUBLE sn, bool
                     def foo(y, t_hat, len_set, q, b, g, lam=lam):
                         yy = y[t_hat:t_hat + len_set] - b
                         if t_hat + len_set == T:  # |s|_1 instead |c|_1
-                            tmp = ((q.dot(yy) - lam) * (1 - g * g)
-                                   / (1 - g**(2 * len_set))) * q - yy
+                            tmp = ((q.dot(yy) - lam) * (1 - g * g) /
+                                   (1 - g**(2 * len_set))) * q - yy
                         else:
-                            tmp = ((q.dot(yy) - lam * (1 - g**len_set)) * (1 - g * g)
-                                   / (1 - g**(2 * len_set))) * q - yy
+                            tmp = ((q.dot(yy) - lam * (1 - g**len_set)) * (1 - g * g) /
+                                   (1 - g**(2 * len_set))) * q - yy
                         return tmp.dot(tmp)
-                    return sum([foo(y, a_s[i][2], a_s[i][3], h[:a_s[i][3]], b, g) for i in idx[-optimize_g:]])
+                    return sum([foo(y, a_s[i][2], a_s[i][3], h[:a_s[i][3]], b, g)
+                                for i in idx[-optimize_g:]])
 
                 def baz(y, active_set):
-                    return minimize(lambda x: bar(y, x, active_set), (b, g), bounds=((0, None), (0, 1)), method='L-BFGS-B',
+                    return minimize(lambda x: bar(y, x, active_set), (b, g),
+                                    bounds=((0 if b_nonneg else None, None), (.001, .999)),
+                                    method='L-BFGS-B',
                                     options={'gtol': 1e-04, 'maxiter': 3, 'ftol': 1e-05})
                 result = baz(y, active_set)
                 if abs(result['x'][1] - g) < 1e-3:
@@ -360,7 +370,7 @@ def constrained_oasisAR1(np.ndarray[DOUBLE, ndim=1] y, DOUBLE g, DOUBLE sn, bool
                 active_set[-1][0] -= lam * g**active_set[-1][3]  # |s|_1 instead |c|_1
                 solution, active_set = oasis(active_set, g, h, solution)
                 # update b and lam
-                db = np.mean(y - solution) - b
+                db = max(np.mean(y - solution), 0 if b_nonneg else -np.inf) - b
                 b += db
                 dlam = -db / (1 - g)
                 lam += dlam
@@ -432,6 +442,7 @@ def constrained_oasisAR1(np.ndarray[DOUBLE, ndim=1] y, DOUBLE g, DOUBLE sn, bool
     return solution, np.append(0, solution[1:] - g * solution[:-1]), b, g, lam
 
 
+# TODO: grow set of pools for long time series
 def oasisAR2(np.ndarray[DOUBLE, ndim=1] y, DOUBLE g1, DOUBLE g2,
              DOUBLE lam=0, DOUBLE s_min=0, int T_over_ISI=1, bool jitter=False):
     """ Infer the most likely discretized spike train underlying an AR(2) fluorescence trace
@@ -609,8 +620,8 @@ def oasisAR2(np.ndarray[DOUBLE, ndim=1] y, DOUBLE g1, DOUBLE g2,
 # TODO: optimize risetime, warm starts
 # N.B.: lam denotes the shift due to the sparsity penalty, i.e. is already multiplied by (1-g1-g2)
 def constrained_oasisAR2(np.ndarray[DOUBLE, ndim=1] y, DOUBLE g1, DOUBLE g2, DOUBLE sn,
-                         bool optimize_b=False, int optimize_g=0, int decimate=5,
-                         int T_over_ISI=1, int max_iter=5, int penalty=1):
+                         bool optimize_b=False, bool b_nonneg=True, int optimize_g=0,
+                         int decimate=5, int T_over_ISI=1, int max_iter=5, int penalty=1):
     """ Infer the most likely discretized spike train underlying an AR(2) fluorescence trace
 
     Solves the noise constrained sparse non-negative deconvolution problem
@@ -629,6 +640,8 @@ def constrained_oasisAR2(np.ndarray[DOUBLE, ndim=1] y, DOUBLE g1, DOUBLE g2, DOU
         Standard deviation of the noise distribution.
     optimize_b : bool, optional, default False
         Optimize baseline if True else it is set to 0, see y.
+    b_nonneg: bool, optional, default True
+        Enforce strictly non-negative baseline if True.
     optimize_g : int, optional, default 0
         Number of large, isolated events to consider for optimizing g.
         No optimization if optimize_g=0.
@@ -807,7 +820,8 @@ def constrained_oasisAR2(np.ndarray[DOUBLE, ndim=1] y, DOUBLE g1, DOUBLE g2, DOU
         if decimate > 0:
             _, tmp, b, aa, lam = constrained_oasisAR1(y.reshape(-1, decimate).mean(1),
                                                       d**decimate,  sn / sqrt(decimate),
-                                                      optimize_b=True, optimize_g=optimize_g)
+                                                      optimize_b=True, b_nonneg=b_nonneg,
+                                                      optimize_g=optimize_g)
             if optimize_g > 0:
                 d = aa**(1. / decimate)
                 g1 = d + r
@@ -821,13 +835,15 @@ def constrained_oasisAR2(np.ndarray[DOUBLE, ndim=1] y, DOUBLE g1, DOUBLE g2, DOU
             lam *= (1 - d**decimate)
         else:
             b = np.percentile(y, 15)
+            if b_nonneg:
+                b = max(b, 0)
             lam = 2 * sn * np.linalg.norm(g11) * (1 - g1 - g2)
         # run oasisAR2  TODO: add warm start
     #     ff = np.hstack([a * decimate + np.arange(-decimate, decimate)
     #                 for a in np.where(tmp>1e-6)[0]])  # this window size seems necessary and sufficient
     #     ff = np.unique(ff[(ff >= 0) * (ff < T)])
         solution, tmp = oasisAR2(y - b, g1, g2, lam=lam / (1 - g1 - g2))
-        db = np.mean(y - solution) - b
+        db = max(np.mean(y - solution), 0 if b_nonneg else -np.inf) - b
         b += db
         lam -= db
         for i in range(max_iter - 1):
@@ -853,10 +869,12 @@ def constrained_oasisAR2(np.ndarray[DOUBLE, ndim=1] y, DOUBLE g1, DOUBLE g2, DOU
             except:
                 # print 'shit happens'
                 db = -bb / aa
+            if b_nonneg:
+                db = max(db, -b)
             # perform shift
             b += db
             solution, tmp = oasisAR2(y - b, g1, g2, lam=lam / (1 - g1 - g2))
-            db = np.mean(y - solution) - b
+            db = max(np.mean(y - solution), 0 if b_nonneg else -np.inf) - b
             b += db
             lam -= db
 

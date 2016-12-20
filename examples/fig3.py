@@ -177,7 +177,7 @@ N, T = Y.shape
 ts = {}
 for solver in solvers:
     ts[solver] = np.zeros(N)
-    print 'running %7s with p=1 and given lambda' % solver
+    print('running %7s with p=1 and given lambda' % solver)
     for i, y in enumerate(Y):
         if solver == 'OASIS':
             ts[solver][i] = Timer(lambda: oasisAR1(y, g=g, lam=2.4)
@@ -188,7 +188,8 @@ for solver in solvers:
 constrained_ts = {}
 for solver in solvers[:-1]:  # GUROBI failed
     constrained_ts[solver] = np.zeros(N)
-    print 'running %7s with p=1 and optimizing lambda such that noise constraint is tight' % solver
+    print('running %7s with p=1 and optimizing lambda such that noise constraint is tight'
+          % solver)
     for i, y in enumerate(Y):
         if solver == 'OASIS':
             constrained_ts[solver][i] = Timer(lambda: constrained_oasisAR1(
@@ -239,7 +240,7 @@ N, T = Y.shape
 ts = {}
 for solver in solvers:
     ts[solver] = np.zeros(N)
-    print 'running %7s with p=2 and given lambda' % solver
+    print('running %7s with p=2 and given lambda' % solver)
     for i, y in enumerate(Y):
         if solver == 'OASIS':
             ts[solver][i] = Timer(lambda: oasisAR2(
@@ -250,7 +251,8 @@ for solver in solvers:
 constrained_ts = {}
 for solver in solvers[:-1]:  # GUROBI failed
     constrained_ts[solver] = np.zeros(N)
-    print 'running %7s with p=2 and optimizing lambda such that noise constraint is tight' % solver
+    print('running %7s with p=2 and optimizing lambda such that noise constraint is tight'
+          % solver)
     for i, y in enumerate(Y):
         if solver == 'OASIS':
             constrained_ts[solver][i] = Timer(lambda: constrained_oasisAR2(

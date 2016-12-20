@@ -168,7 +168,8 @@ def deconvolve(y, g=(None,), sn=None, b=None, optimize_g=0, penalty=0, fudge_fac
 
     if g[0] is None or sn is None:
         if fudge_factor is None:
-            fudge_factor = [.98, 1][len(g) - 1]
+            # fudge_factor = [.98, 1][len(g) - 1]
+            fudge_factor = .96 if optimize_g else .98
         est = estimate_parameters(y, p=len(g), fudge_factor=fudge_factor)
         if g[0] is None:
             g = est[0]
@@ -186,7 +187,7 @@ def deconvolve(y, g=(None,), sn=None, b=None, optimize_g=0, penalty=0, fudge_fac
         return constrained_onnlsAR2(y, g, sn, optimize_b=True if b is None else False,
                                     optimize_g=optimize_g, penalty=penalty, **kwargs)
     else:
-        print 'g must have length 1 or 2, cause only AR(1) and AR(2) are currently implemented'
+        print('g must have length 1 or 2, cause only AR(1) and AR(2) are currently implemented')
 
 
 def foopsi(y, g, lam=0, b=0, solver='ECOS'):
@@ -222,8 +223,7 @@ def foopsi(y, g, lam=0, b=0, solver='ECOS'):
     # construct deconvolution matrix  (s = G*c)
     G = scipy.sparse.dia_matrix((np.ones((1, T)), [0]), (T, T))
     for i, gi in enumerate(g):
-        G = G + \
-            scipy.sparse.dia_matrix((-gi * np.ones((1, T)), [-1 - i]), (T, T))
+        G = G + scipy.sparse.dia_matrix((-gi * np.ones((1, T)), [-1 - i]), (T, T))
     c = cvx.Variable(T)  # calcium at each time step
     # objective = cvx.Minimize(.5 * cvx.sum_squares(c - y) + lam * cvx.norm(G * c, 1))
     # cvxpy had sometime trouble to find above solution for G*c, therefore
@@ -354,7 +354,7 @@ def _nnls(KK, Ky, s=None, mask=None, tol=1e-9, max_iter=None):
             mu = np.linalg.inv(KK[P][:, P]).dot(Ky[P])
         except:
             mu = np.linalg.inv(KK[P][:, P] + tol * np.eye(P.sum())).dot(Ky[P])
-            print r'added $\epsilon$I to avoid singularity'
+            print(r'added $\epsilon$I to avoid singularity')
         while len(mu > 0) and min(mu) < 0:
             a = min(s[P][mu < 0] / (s[P][mu < 0] - mu[mu < 0]))
             s[P] += a * (mu - s[P])
@@ -362,9 +362,8 @@ def _nnls(KK, Ky, s=None, mask=None, tol=1e-9, max_iter=None):
             try:
                 mu = np.linalg.inv(KK[P][:, P]).dot(Ky[P])
             except:
-                mu = np.linalg.inv(KK[P][:, P] + tol *
-                                   np.eye(P.sum())).dot(Ky[P])
-                print r'added $\epsilon$I to avoid singularity'
+                mu = np.linalg.inv(KK[P][:, P] + tol * np.eye(P.sum())).dot(Ky[P])
+                print(r'added $\epsilon$I to avoid singularity')
         s[P] = mu.copy()
         l = Ky - KK[:, P].dot(s[P])
         if max(l) < tol:

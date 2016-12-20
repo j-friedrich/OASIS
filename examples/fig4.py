@@ -221,13 +221,13 @@ for _ in range(3):
     solution, active_set, g = update_g(y, active_set, g, lam)
 
 # plot converged results with comparison traces
-ax = fig.add_axes([ax1, .07,  1 - ax1, .12])
+ax = fig.add_axes([ax1, .07, 1 - ax1, .12])
 sol_given_g = constrained_oasisAR1(y, .95, sn)[0]
 estimated_g = estimate_parameters(y, p=1)[0][0]
-print 'estimated gamma via autocorrelation: ', estimated_g
-print 'optimized gamma                    : ', g
+print('estimated gamma via autocorrelation: ', estimated_g)
+print('optimized gamma                    : ', g)
 sol_PSD_g = oasisAR1(y, estimated_g, 0)[0]
-# print (sol_PSD_g-y).dot(sol_PSD_g-y), sn*sn*T # renders constraint problem infeasible
+# print((sol_PSD_g-y).dot(sol_PSD_g-y), sn*sn*T # renders constraint problem infeasible
 plt.plot(sol_given_g, '--', c=col[6], label=r'true $\gamma$', zorder=11)
 plt.plot(sol_PSD_g, c=col[5], label=r'$\gamma$ from autocovariance', zorder=10)
 plt.legend(frameon=False, loc=(.1, .62), ncol=2)
@@ -237,13 +237,19 @@ plt.xlabel('Time [s]', labelpad=-10)
 plt.show()
 
 
-print 'correlation with ground truth calcium for   given   gamma ', np.corrcoef(sol_given_g, trueC[n])[0, 1]
-print 'correlation with ground truth calcium for estimated gamma ', np.corrcoef(sol_PSD_g, trueC[n])[0, 1]
-print 'correlation with ground truth calcium for optimized gamma ', np.corrcoef(solution, trueC[n])[0, 1]
+print('correlation with ground truth calcium for   given   gamma ',
+      np.corrcoef(sol_given_g, trueC[n])[0, 1])
+print('correlation with ground truth calcium for estimated gamma ',
+      np.corrcoef(sol_PSD_g, trueC[n])[0, 1])
+print('correlation with ground truth calcium for optimized gamma ',
+      np.corrcoef(solution, trueC[n])[0, 1])
 
 spks = np.append(0, sol_given_g[1:] - .95 * sol_given_g[:-1])
-print 'correlation with ground truth spikes for   given   gamma ', np.corrcoef(trueSpikes[n], spks)[0, 1]
+print('correlation with ground truth spikes for   given   gamma ',
+      np.corrcoef(trueSpikes[n], spks)[0, 1])
 spks = np.append(0, sol_PSD_g[1:] - estimated_g * sol_PSD_g[:-1])
-print 'correlation with ground truth spikes for estimated gamma ', np.corrcoef(trueSpikes[n], spks)[0, 1]
+print('correlation with ground truth spikes for estimated gamma ',
+      np.corrcoef(trueSpikes[n], spks)[0, 1])
 spks = np.append(0, solution[1:] - g * solution[:-1])
-print 'correlation with ground truth spikes for optimized gamma ', np.corrcoef(trueSpikes[n], spks)[0, 1]
+print('correlation with ground truth spikes for optimized gamma ',
+      np.corrcoef(trueSpikes[n], spks)[0, 1])
