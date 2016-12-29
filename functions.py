@@ -421,10 +421,12 @@ def onnls(y, g, lam=0, shift=100, window=None, mask=None, tol=1e-9, max_iter=Non
     if mask is None:
         mask = np.ones(T, dtype=bool)
     if window is None:
-        w = max(200, len(g) if len(g) > 2 else int(-5 / log(g[0] if len(g) == 1 else
-                                                            (g[0] + sqrt(g[0] * g[0] + 4 * g[1])) / 2)))
+        w = max(200, len(g) if len(g) > 2 else
+                int(-5 / log(g[0] if len(g) == 1 else
+                             (g[0] + sqrt(g[0] * g[0] + 4 * g[1])) / 2)))
     else:
         w = window
+    w = min(T, w)
     K = np.zeros((w, w))
     if len(g) == 1:  # kernel for AR(1)
         _y = y - lam * (1 - g[0])
@@ -438,8 +440,11 @@ def onnls(y, g, lam=0, shift=100, window=None, mask=None, tol=1e-9, max_iter=Non
         _y[-1] = y[-1] - lam
         d = (g[0] + sqrt(g[0] * g[0] + 4 * g[1])) / 2
         r = (g[0] - sqrt(g[0] * g[0] + 4 * g[1])) / 2
-        h = (np.exp(log(d) * np.arange(1, w + 1)) -
-             np.exp(log(r) * np.arange(1, w + 1))) / (d - r)
+        if d == r:
+            h = np.exp(log(d) * np.arange(1, w + 1)) * np.arange(1, w + 1)
+        else:
+            h = (np.exp(log(d) * np.arange(1, w + 1)) -
+                 np.exp(log(r) * np.arange(1, w + 1))) / (d - r)
         for i in range(w):
             K[i:, i] = h[:w - i]
     else:  # arbitrary kernel
@@ -452,7 +457,7 @@ def onnls(y, g, lam=0, shift=100, window=None, mask=None, tol=1e-9, max_iter=Non
 
     s = np.zeros(T)
     KK = K.T.dot(K)
-    for i in range(0, T - w, shift):
+    for i in range(0, max(1, T - w), shift):
         s[i:i + w] = _nnls(KK, K.T.dot(_y[i:i + w]), s[i:i + w], mask=mask[i:i + w],
                            tol=tol, max_iter=max_iter)[:w]
         # subtract contribution of spikes already committed to
@@ -526,10 +531,12 @@ def constrained_onnlsAR2(y, g, sn, optimize_b=True, b_nonneg=True, optimize_g=0,
     d = (g[0] + sqrt(g[0] * g[0] + 4 * g[1])) / 2
     r = (g[0] - sqrt(g[0] * g[0] + 4 * g[1])) / 2
     if window is None:
-        window = int(max(200, -5 / log(d)))
+        window = int(min(T, max(200, -5 / log(d))))
     if not optimize_g:
-        g11 = (np.exp(log(d) * np.arange(1, T + 1)) -
-               np.exp(log(r) * np.arange(1, T + 1))) / (d - r)
+        g11 = (np.exp(log(d) * np.arange(1, T + 1)) * np.arange(1, T + 1)) \
+            if d == r else \
+            (np.exp(log(d) * np.arange(1, T + 1)) -
+             np.exp(log(r) * np.arange(1, T + 1))) / (d - r)
         g12 = np.append(0, g[1] * g11[:-1])
         g11g11 = np.cumsum(g11 * g11)
         g11g12 = np.cumsum(g11 * g12)
