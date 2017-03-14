@@ -148,8 +148,9 @@ def cb(y, active_set, counter, current):
     for i, s in enumerate(np.r_[[0], solution[1:] - g * solution[:-1]]):
         ax2.plot([i, i], [0, s], c='k', zorder=-11, lw=1.4, clip_on=False)
     ax2.scatter(np.arange(len(y)), np.r_[[0], solution[1:] - g * solution[:-1]],
-                s=40, cmap=plt.cm.Spectral,   c=color, clip_on=False, zorder=11)
-    ax2.scatter([np.arange(len(y))[current]], [np.r_[[0], solution[1:] - g * solution[:-1]][current]],
+                s=40, cmap=plt.cm.Spectral, c=color, clip_on=False, zorder=11)
+    ax2.scatter([np.arange(len(y))[current]],
+                [np.r_[[0], solution[1:] - g * solution[:-1]][current]],
                 s=120, lw=2.5, marker='+', color='b', clip_on=False, zorder=11)
     for a in active_set[::2]:
         ax2.axvspan(a[2], a[2] + a[3], alpha=0.1, color='k', zorder=-11)
@@ -163,13 +164,13 @@ def cb(y, active_set, counter, current):
     ax2.set_xlabel('Time', labelpad=35, x=.5)
     ax2.set_ylabel('Spikes')
     plt.subplots_adjust(left=0.032, right=.995, top=.995, bottom=0.19, hspace=0.22)
-    fig.canvas.draw()
+    # fig.canvas.draw()
     if save_figs:
         plt.savefig('video/%03d.pdf' % counter)
-    # import time
-    # time.sleep(.03)
+    plt.pause(1e-9)
     ax1.clear()
     ax2.clear()
+
 
 # generate data
 g = .8

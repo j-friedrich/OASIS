@@ -51,11 +51,11 @@ for opt in ['-', 'l', 'lb', 'lbg', 'lbg10', 'lbg5', 'lbg_ds', 'lbg10_ds', 'lbg5_
         results[opt]['distance'].append(np.linalg.norm(s - trueSpikes[i]))
         results[opt]['correlation'].append(np.corrcoef(s, trueSpikes[i])[0, 1])
 
-print ' optimize     Time [ms]       Distance       Correlation'
+print(' optimize     Time [ms]       Distance       Correlation')
 for opt in ['-', 'l', 'lb', 'lbg', 'lbg10', 'lbg5', 'lbg_ds', 'lbg10_ds', 'lbg5_ds']:
-    print (('%8s   %6.2f+- %.2f   %.2f +- %.2f    %.3f +- %.3f' if opt == '-'
-            else '%8s  %6.1f +- %.1f    %.2f +- %.2f    %.3f +- %.3f') %
-           (opt,
-            np.mean(results[opt]['time']) * 100,  np.std(results[opt]['time']) * 100 / np.sqrt(N),
-            np.mean(results[opt]['distance']),  np.std(results[opt]['distance']) / np.sqrt(N),
-            np.mean(results[opt]['correlation']),  np.std(results[opt]['correlation']) / np.sqrt(N)))
+    print(('%8s   %6.2f+- %.2f   %.2f +- %.2f    %.3f +- %.3f' if opt == '-'
+           else '%8s  %6.1f +- %.1f    %.2f +- %.2f    %.3f +- %.3f') %
+          (opt,
+           np.mean(results[opt]['time']) * 100, np.std(results[opt]['time']) * 100 / np.sqrt(N),
+           np.mean(results[opt]['distance']), np.std(results[opt]['distance']) / np.sqrt(N),
+           np.mean(results[opt]['correlation']), np.std(results[opt]['correlation']) / np.sqrt(N)))

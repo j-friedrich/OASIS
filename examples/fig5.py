@@ -6,12 +6,16 @@ an active set method for sparse nonnegative deconvolution
 import numpy as np
 from matplotlib import pyplot as plt
 from oasis import oasisAR1, oasisAR2
-from functions import init_fig, simpleaxis, gen_data, constrained_foopsi
+try:
+    from functions import init_fig, simpleaxis, gen_data, constrained_foopsi
+except:
+    raise ImportError(
+        'To produce this figure you actually need to have cvxpy installed.')
 
 init_fig()
 # colors for colorblind from  http://www.cookbook-r.com/Graphs/Colors_(ggplot2)/
 col = ['#0072B2', '#009E73', '#D55E00', '#E69F00',
-       '#56B4E9', '#CC79A7', '#40e0d0', '#F0E442']
+       '#56B4E9', '#CC79A7', '#F0E442', '#999999']
 
 
 def plotTrace(lg=False):
@@ -20,7 +24,7 @@ def plotTrace(lg=False):
     plt.plot(c, c=col[0], label='L1')
     plt.plot(c_t, c=col[1], label='Thresh.')
     plt.plot(trueC[0], c=col[2], lw=3, label='Truth', zorder=-5)
-    plt.plot(y, c=col[7], alpha=.7, zorder=-10, label='Data')
+    plt.plot(y, c=col[7], lw=1.5, alpha=.7, zorder=-10, label='Data')
     if lg:
         plt.legend(frameon=False, ncol=4, loc=(.05, .82))
     plt.gca().set_xticklabels([])

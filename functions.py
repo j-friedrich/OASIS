@@ -1,24 +1,27 @@
 import numpy as np
-import cvxpy as cvx
 import scipy
 import scipy.signal
 import matplotlib.pyplot as plt
 from math import sqrt, log, exp
 from oasis import constrained_oasisAR1, oasisAR1
-import os
 from warnings import warn
 from scipy.optimize import minimize
+try:
+    import cvxpy as cvx
+    cvxpy_installed = True
+except:
+    cvxpy_installed = False
+    warn("Could not find cvxpy. Don't worry, you can still use OASIS, " +
+         "just not the slower interior point methods we compared to in the papers.")
 
 
 def init_fig():
     """change some defaults for plotting"""
     plt.rc('figure', facecolor='white', dpi=90, frameon=False)
-    plt.rc('font', size=30, **{'family': 'sans-serif',
-                               'sans-serif': ['Computer Modern']})
+    plt.rc('font', size=30, **{'family': 'sans-serif', 'sans-serif': ['Computer Modern']})
     plt.rc('lines', lw=2)
     plt.rc('text', usetex=True)
-    plt.rc('legend', **{'fontsize': 24, 'frameon': False,
-                        'labelspacing': .3, 'handletextpad': .3})
+    plt.rc('legend', **{'fontsize': 24, 'frameon': False, 'labelspacing': .3, 'handletextpad': .3})
     plt.rc('axes', linewidth=2)
     plt.rc('xtick.major', size=10, width=1.5)
     plt.rc('ytick.major', size=10, width=1.5)
@@ -114,7 +117,7 @@ def gen_sinusoidal_data(g=[.95], sn=.3, T=3000, framerate=30, firerate=.5, b=0, 
     np.random.seed(seed)
     Y = np.zeros((N, T))
     trueSpikes = np.random.rand(N, T) < firerate / float(framerate) * \
-        np.sin(np.arange(T) / 50)**3 * 4
+        np.sin(np.arange(T) // 50)**3 * 4
     truth = trueSpikes.astype(float)
     for i in range(2, T):
         if len(g) == 2:
@@ -191,113 +194,113 @@ def deconvolve(y, g=(None,), sn=None, b=None, b_nonneg=True,
         print('g must have length 1 or 2, cause only AR(1) and AR(2) are currently implemented')
 
 
-def foopsi(y, g, lam=0, b=0, solver='ECOS'):
-    # """Solves the penalized deconvolution problem using the cvxpy package.
-    """ Infer the most likely discretized spike train underlying an AR(1) fluorescence trace
+if cvxpy_installed:
+    def foopsi(y, g, lam=0, b=0, solver='ECOS'):
+        # """Solves the penalized deconvolution problem using the cvxpy package.
+        """ Infer the most likely discretized spike train underlying an AR(1) fluorescence trace
 
-    Solves the sparse non-negative deconvolution problem
-    min 1/2|c-y|^2 + lam |s|_1 subject to s=Gc>=0
+        Solves the sparse non-negative deconvolution problem
+        min 1/2|c-y|^2 + lam |s|_1 subject to s=Gc>=0
 
-    Parameters:
-    -----------
-    y : array, shape (T,)
-        Fluorescence trace.
-    g : list of float
-        Parameters of the autoregressive model, cardinality equivalent to p.
-    lam : float, optional, default 0
-        Sparsity penalty parameter.
-    b : float, optional, default 0
-        Baseline.
-    solver: string, optional, default 'ECOS'
-        Solvers to be used. Can be choosen between ECOS, SCS, CVXOPT and GUROBI,
-        if installed.
+        Parameters:
+        -----------
+        y : array, shape (T,)
+            Fluorescence trace.
+        g : list of float
+            Parameters of the autoregressive model, cardinality equivalent to p.
+        lam : float, optional, default 0
+            Sparsity penalty parameter.
+        b : float, optional, default 0
+            Baseline.
+        solver: string, optional, default 'ECOS'
+            Solvers to be used. Can be choosen between ECOS, SCS, CVXOPT and GUROBI,
+            if installed.
 
-    Returns:
-    --------
-    c : array, shape (T,)
-        The inferred denoised fluorescence signal at each time-bin.
-    s : array, shape (T,)
-        Discretized deconvolved neural activity (spikes).
-    """
+        Returns:
+        --------
+        c : array, shape (T,)
+            The inferred denoised fluorescence signal at each time-bin.
+        s : array, shape (T,)
+            Discretized deconvolved neural activity (spikes).
+        """
 
-    T = y.size
-    # construct deconvolution matrix  (s = G*c)
-    G = scipy.sparse.dia_matrix((np.ones((1, T)), [0]), (T, T))
-    for i, gi in enumerate(g):
-        G = G + scipy.sparse.dia_matrix((-gi * np.ones((1, T)), [-1 - i]), (T, T))
-    c = cvx.Variable(T)  # calcium at each time step
-    # objective = cvx.Minimize(.5 * cvx.sum_squares(c - y) + lam * cvx.norm(G * c, 1))
-    # cvxpy had sometime trouble to find above solution for G*c, therefore
-    if b is None:
-        b = cvx.Variable(1)
-    objective = cvx.Minimize(.5 * cvx.sum_squares(b + c - y) +
-                             lam * (1 - np.sum(g)) * cvx.norm(c, 1))
-    constraints = [G * c >= 0]
-    prob = cvx.Problem(objective, constraints)
-    prob.solve(solver=solver)
-    s = np.squeeze(np.asarray(G * c.value))
-    s[0] = 0  # reflects merely initial calcium concentration
-    c = np.squeeze(np.asarray(c.value))
-    return c, s
-
-
-def constrained_foopsi(y, g, sn, b=0, solver='ECOS'):
-    """Solves the noise constrained deconvolution problem using the cvxpy package.
-
-    Parameters:
-    -----------
-    y : array, shape (T,)
-        Fluorescence trace.
-    g : tuple of float
-        Parameters of the autoregressive model, cardinality equivalent to p.
-    sn : float
-        Estimated noise level.
-    b : float, optional, default 0
-        Baseline.
-    solver: string, optional, default 'ECOS'
-        Solvers to be used. Can be choosen between ECOS, SCS, CVXOPT and GUROBI,
-        if installed.
-
-    Returns:
-    --------
-    c : array, shape (T,)
-        The inferred denoised fluorescence signal at each time-bin.
-    s : array, shape (T,)
-        Discretized deconvolved neural activity (spikes).
-    b : float
-        Fluorescence baseline value.
-    g : tuple of float
-        Parameters of the AR(2) process that models the fluorescence impulse response.
-    lam: float
-        Optimal Lagrange multiplier for noise constraint
-    """
-
-    T = y.size
-    # construct deconvolution matrix  (s = G*c)
-    G = scipy.sparse.dia_matrix((np.ones((1, T)), [0]), (T, T))
-    for i, gi in enumerate(g):
-        G = G + \
-            scipy.sparse.dia_matrix((-gi * np.ones((1, T)), [-1 - i]), (T, T))
-    c = cvx.Variable(T)  # calcium at each time step
-    if b is None:
-        b = cvx.Variable(1)
-    # cvxpy had sometime trouble to find solution for G*c
-    objective = cvx.Minimize(cvx.norm(c, 1))
-    constraints = [G * c >= 0]
-    constraints.append(cvx.sum_squares(b + c - y) <= sn * sn * T)
-    prob = cvx.Problem(objective, constraints)
-    prob.solve(solver=solver)
-    try:
-        b = b.value
-    except:
-        pass
-    try:
+        T = y.size
+        # construct deconvolution matrix  (s = G*c)
+        G = scipy.sparse.dia_matrix((np.ones((1, T)), [0]), (T, T))
+        for i, gi in enumerate(g):
+            G = G + scipy.sparse.dia_matrix((-gi * np.ones((1, T)), [-1 - i]), (T, T))
+        c = cvx.Variable(T)  # calcium at each time step
+        # objective = cvx.Minimize(.5 * cvx.sum_squares(c - y) + lam * cvx.norm(G * c, 1))
+        # cvxpy had sometime trouble to find above solution for G*c, therefore
+        if b is None:
+            b = cvx.Variable(1)
+        objective = cvx.Minimize(.5 * cvx.sum_squares(b + c - y) +
+                                 lam * (1 - np.sum(g)) * cvx.norm(c, 1))
+        constraints = [G * c >= 0]
+        prob = cvx.Problem(objective, constraints)
+        prob.solve(solver=solver)
         s = np.squeeze(np.asarray(G * c.value))
         s[0] = 0  # reflects merely initial calcium concentration
         c = np.squeeze(np.asarray(c.value))
-    except:
-        s = None
-    return c, s, b, g, prob.constraints[1].dual_value
+        return c, s
+
+    def constrained_foopsi(y, g, sn, b=0, solver='ECOS'):
+        """Solves the noise constrained deconvolution problem using the cvxpy package.
+
+        Parameters:
+        -----------
+        y : array, shape (T,)
+            Fluorescence trace.
+        g : tuple of float
+            Parameters of the autoregressive model, cardinality equivalent to p.
+        sn : float
+            Estimated noise level.
+        b : float, optional, default 0
+            Baseline.
+        solver: string, optional, default 'ECOS'
+            Solvers to be used. Can be choosen between ECOS, SCS, CVXOPT and GUROBI,
+            if installed.
+
+        Returns:
+        --------
+        c : array, shape (T,)
+            The inferred denoised fluorescence signal at each time-bin.
+        s : array, shape (T,)
+            Discretized deconvolved neural activity (spikes).
+        b : float
+            Fluorescence baseline value.
+        g : tuple of float
+            Parameters of the AR(2) process that models the fluorescence impulse response.
+        lam: float
+            Optimal Lagrange multiplier for noise constraint
+        """
+
+        T = y.size
+        # construct deconvolution matrix  (s = G*c)
+        G = scipy.sparse.dia_matrix((np.ones((1, T)), [0]), (T, T))
+        for i, gi in enumerate(g):
+            G = G + \
+                scipy.sparse.dia_matrix((-gi * np.ones((1, T)), [-1 - i]), (T, T))
+        c = cvx.Variable(T)  # calcium at each time step
+        if b is None:
+            b = cvx.Variable(1)
+        # cvxpy had sometime trouble to find solution for G*c
+        objective = cvx.Minimize(cvx.norm(c, 1))
+        constraints = [G * c >= 0]
+        constraints.append(cvx.sum_squares(b + c - y) <= sn * sn * T)
+        prob = cvx.Problem(objective, constraints)
+        prob.solve(solver=solver)
+        try:
+            b = b.value
+        except:
+            pass
+        try:
+            s = np.squeeze(np.asarray(G * c.value))
+            s[0] = 0  # reflects merely initial calcium concentration
+            c = np.squeeze(np.asarray(c.value))
+        except:
+            s = None
+        return c, s, b, g, prob.constraints[1].dual_value
 
 
 def _nnls(KK, Ky, s=None, mask=None, tol=1e-9, max_iter=None):
@@ -413,7 +416,7 @@ def onnls(y, g, lam=0, shift=100, window=None, mask=None, tol=1e-9, max_iter=Non
 
     References
     ----------
-    * Friedrich J and Paninski L, NIPS 2016
+    * Friedrich J, Zhou P, and Paninski L, PLOS Computational Biology 2017
     * Bro R and DeJong S, J Chemometrics 1997
     """
 
@@ -524,7 +527,7 @@ def constrained_onnlsAR2(y, g, sn, optimize_b=True, b_nonneg=True, optimize_g=0,
     References
     ----------
     * Friedrich J and Paninski L, NIPS 2016
-    * Friedrich J, Zhou P, and Paninski L, arXiv 2016
+    * Friedrich J, Zhou P, and Paninski L, PLOS Computational Biology 2017
     """
 
     T = len(y)
@@ -570,7 +573,7 @@ def constrained_onnlsAR2(y, g, sn, optimize_b=True, b_nonneg=True, optimize_g=0,
         lam *= (1 - d**decimate) / f_lam
         # s = oasisAR1(s, r)[1]
         # this window size seems necessary and sufficient
-        ff = np.hstack([a + np.arange(-2, 2) for a in np.where(s > s.max() / 10.)[0]])
+        ff = np.ravel([a + np.arange(-2, 2) for a in np.where(s > s.max() / 10.)[0]])
         ff = np.unique(ff[(ff >= 0) * (ff < T)])
         mask = np.zeros(T, dtype=bool)
         mask[ff] = True
@@ -618,7 +621,6 @@ def constrained_onnlsAR2(y, g, sn, optimize_b=True, b_nonneg=True, optimize_g=0,
             try:
                 db = (-bb + sqrt(bb * bb - aa * cc)) / aa
             except:
-                os.write(1, 'shit happens\n')
                 db = -bb / aa
             # perform shift
             b += db
@@ -654,7 +656,6 @@ def constrained_onnlsAR2(y, g, sn, optimize_b=True, b_nonneg=True, optimize_g=0,
             try:
                 db = (-bb + sqrt(bb * bb - aa * cc)) / aa
             except:
-                os.write(1, 'shit happens\n')
                 db = -bb / aa
             # perform shift
             if b_nonneg:

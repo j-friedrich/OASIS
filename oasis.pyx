@@ -41,7 +41,7 @@ def oasisAR1(np.ndarray[DOUBLE, ndim=1] y, DOUBLE g, DOUBLE lam=0, DOUBLE s_min=
     References
     ----------
     * Friedrich J and Paninski L, NIPS 2016
-    * Friedrich J, Zhou P, and Paninski L, arXiv 2016
+    * Friedrich J, Zhou P, and Paninski L, PLOS Computational Biology 2017
     """
 
     cdef:
@@ -138,7 +138,7 @@ def constrained_oasisAR1(np.ndarray[DOUBLE, ndim=1] y, DOUBLE g, DOUBLE sn,
     References
     ----------
     * Friedrich J and Paninski L, NIPS 2016
-    * Friedrich J, Zhou P, and Paninski L, arXiv 2016
+    * Friedrich J, Zhou P, and Paninski L, PLOS Computational Biology 2017
     """
 
     cdef:
@@ -157,7 +157,6 @@ def constrained_oasisAR1(np.ndarray[DOUBLE, ndim=1] y, DOUBLE g, DOUBLE sn,
         g = g**decimate
         thresh = thresh / decimate / decimate
         T = len(y)
-    # len_active_set = T
     h = np.exp(log(g) * np.arange(T))  # explicit kernel, useful for constructing solution
     solution = np.empty(T)
     # [value, weight, start time, length] of pool
@@ -313,7 +312,6 @@ def constrained_oasisAR1(np.ndarray[DOUBLE, ndim=1] y, DOUBLE g, DOUBLE sn,
             if bb * bb - aa * cc > 0:
                 dphi = (-bb + sqrt(bb * bb - aa * cc)) / aa
             else:
-                # print 'shit happens'
                 dphi = -bb / aa
             if b_nonneg:
                 dphi = max(dphi, -b / (1 - g))
@@ -391,11 +389,11 @@ def constrained_oasisAR1(np.ndarray[DOUBLE, ndim=1] y, DOUBLE g, DOUBLE sn,
         thresh = thresh * decimate * decimate
         T = len(fluor)
         # warm-start active set
-        ff = np.hstack([a[2] * decimate + np.arange(-decimate, 3 * decimate / 2)
-                        for a in active_set])  # this window size seems necessary and sufficient
+        ff = np.ravel([a[2] * decimate + np.arange(-decimate, 3 * decimate / 2)
+                       for a in active_set])  # this window size seems necessary and sufficient
         ff = np.unique(ff[(ff >= 0) * (ff < T)])
         ll = np.append(ff[1:] - ff[:-1], T - ff[-1])
-        active_set = map(list, zip([0.] * len(ll), [0.] * len(ll), list(ff), list(ll)))
+        active_set = list(map(list, zip([0.] * len(ll), [0.] * len(ll), list(ff), list(ll))))
         ma = max([a[3] for a in active_set])
         h = np.exp(log(g) * np.arange(T))
         for a in active_set:
@@ -479,7 +477,7 @@ def oasisAR2(np.ndarray[DOUBLE, ndim=1] y, DOUBLE g1, DOUBLE g2,
     References
     ----------
     * Friedrich J and Paninski L, NIPS 2016
-    * Friedrich J, Zhou P, and Paninski L, arXiv 2016
+    * Friedrich J, Zhou P, and Paninski L, PLOS Computational Biology 2017
     """
 
     cdef:
@@ -670,7 +668,7 @@ def constrained_oasisAR2(np.ndarray[DOUBLE, ndim=1] y, DOUBLE g1, DOUBLE g2, DOU
     References
     ----------
     * Friedrich J and Paninski L, NIPS 2016
-    * Friedrich J, Zhou P, and Paninski L, arXiv 2016
+    * Friedrich J, Zhou P, and Paninski L, PLOS Computational Biology 2017
     """
 
     cdef:
@@ -867,7 +865,6 @@ def constrained_oasisAR2(np.ndarray[DOUBLE, ndim=1] y, DOUBLE g1, DOUBLE g2, DOU
             try:
                 db = (-bb + sqrt(bb * bb - aa * cc)) / aa
             except:
-                # print 'shit happens'
                 db = -bb / aa
             if b_nonneg:
                 db = max(db, -b)
