@@ -454,9 +454,12 @@ def onnls(y, g, lam=0, shift=100, window=None, mask=None, tol=1e-9, max_iter=Non
         h = g
         for i in range(w):
             K[i:, i] = h[:w - i]
-        a = np.linalg.inv(K).sum(0)
-        _y = y - lam * a[0]
-        _y[-w:] = y[-w:] - lam * a
+        if lam:
+            a = np.linalg.inv(K).sum(0)
+            _y = y - lam * a[0]
+            _y[-w:] = y[-w:] - lam * a
+        else:
+            _y = y
 
     s = np.zeros(T)
     KK = K.T.dot(K)
