@@ -57,9 +57,7 @@ def oasisAR1(np.ndarray[DOUBLE, ndim=1] y, DOUBLE g, DOUBLE lam=0, DOUBLE s_min=
     i = 0
     t = 1
     while t < T:
-        while t < T and \
-            (P[i][0] / P[i][1] * g**P[i][3] + s_min <=
-             P[i + 1][0] / P[i + 1][1]):
+        while t < T and (P[i][0] / P[i][1] * g**P[i][3] + s_min <= P[i + 1][0] / P[i + 1][1]):
             i += 1
             t = P[i][2] + P[i][3]
             if t < T:
@@ -72,8 +70,7 @@ def oasisAR1(np.ndarray[DOUBLE, ndim=1] y, DOUBLE g, DOUBLE lam=0, DOUBLE s_min=
         P[i][3] += P[i + 1][3]
         P.pop(i + 1)
         while (i > 0 and  # backtrack until violations fixed
-               (P[i - 1][0] / P[i - 1][1] * g**P[i - 1][3] + s_min >
-                P[i][0] / P[i][1])):
+               (P[i - 1][0] / P[i - 1][1] * g**P[i - 1][3] + s_min > P[i][0] / P[i][1])):
             i -= 1
             # merge two pools
             P[i][0] += P[i + 1][0] * g**P[i][3]
@@ -175,9 +172,7 @@ def constrained_oasisAR1(np.ndarray[DOUBLE, ndim=1] y, DOUBLE g, DOUBLE sn,
             i = 0
             t = 1
             while t < T:
-                while t < T and \
-                    (P[i][0] * P[i + 1][1] * g**P[i][3] <=
-                     P[i][1] * P[i + 1][0]):
+                while t < T and (P[i][0] * P[i + 1][1] * g**P[i][3] <= P[i][1] * P[i + 1][0]):
                     i += 1
                     t = P[i][2] + P[i][3]
                     if t < T:
@@ -191,8 +186,7 @@ def constrained_oasisAR1(np.ndarray[DOUBLE, ndim=1] y, DOUBLE g, DOUBLE sn,
                 P[i][3] += P[i + 1][3]
                 P.pop(i + 1)
                 while (i > 0 and  # backtrack until violations fixed
-                       (P[i - 1][0] * P[i][1] * g**P[i - 1][3] >
-                        P[i - 1][1] * P[i][0])):
+                       (P[i - 1][0] * P[i][1] * g**P[i - 1][3] > P[i - 1][1] * P[i][0])):
                     i -= 1
                     # merge two pools
                     P[i][0] += P[i + 1][0] * g**P[i][3]
@@ -214,9 +208,7 @@ def constrained_oasisAR1(np.ndarray[DOUBLE, ndim=1] y, DOUBLE g, DOUBLE sn,
         len_P = len(P)
         i = 0
         while i < len_P - 1:
-            while i < len_P - 1 and \
-                (P[i][0] * P[i + 1][1] * g**P[i][3] <=
-                 P[i][1] * P[i + 1][0]):
+            while i < len_P - 1 and (P[i][0] * P[i + 1][1] * g**P[i][3] <= P[i][1] * P[i + 1][0]):
                 i += 1
             if i == len_P - 1:
                 break
@@ -227,8 +219,7 @@ def constrained_oasisAR1(np.ndarray[DOUBLE, ndim=1] y, DOUBLE g, DOUBLE sn,
             P.pop(i + 1)
             len_P -= 1
             while (i > 0 and  # backtrack until violations fixed
-                   (P[i - 1][0] * P[i][1] * g**P[i - 1][3] >
-                    P[i - 1][1] * P[i][0])):
+                   (P[i - 1][0] * P[i][1] * g**P[i - 1][3] > P[i - 1][1] * P[i][0])):
                 i -= 1
                 # merge two pools
                 P[i][0] += P[i + 1][0] * g**P[i][3]
@@ -242,7 +233,9 @@ def constrained_oasisAR1(np.ndarray[DOUBLE, ndim=1] y, DOUBLE g, DOUBLE sn,
         c[c < 0] = 0
         return c, P
 
-    if not optimize_b:  # don't optimize b nor g, just the dual variable lambda
+    g_converged = False
+    count = 0
+    if not optimize_b:  # don't optimize b, just the dual variable lambda and g if optimize_g>0
         if T < 5000:
             c, P = oasis(P, g, h, c)
         else:
@@ -253,9 +246,6 @@ def constrained_oasisAR1(np.ndarray[DOUBLE, ndim=1] y, DOUBLE g, DOUBLE sn,
         b = 0
         # until noise constraint is tight or spike train is empty
         while RSS < thresh * (1 - 1e-4) and sum(c) > 1e-9:
-            # calc RSS
-            res = y - c
-            RSS = res.dot(res)
             # update lam
             for t, (v, w, f, l) in enumerate(P):
                 if t == len(P) - 1:  # for |s|_1 instead |c|_1 sparsity
@@ -267,9 +257,48 @@ def constrained_oasisAR1(np.ndarray[DOUBLE, ndim=1] y, DOUBLE g, DOUBLE sn,
             cc = RSS - thresh
             dlam = (-bb + sqrt(bb * bb - aa * cc)) / aa
             lam += dlam
-            for a in P:     # perform shift
+            for a in P[:-1]:     # perform shift
                 a[0] -= dlam * (1 - g**a[3])
+            P[-1][0] -= dlam  # correct last pool; |s|_1 instead |c|_1
             c, P = oasis(P, g, h, c)
+
+            # update g and b
+            if optimize_g and count < max_iter - 1 and (not g_converged):
+                ma = max([a[3] for a in P])
+                idx = np.argsort([a[0] for a in P])
+
+                def bar(y, g, P):
+                    h = np.exp(log(g) * np.arange(ma))
+
+                    def foo(y, t_hat, len_set, q, g, lam=lam):
+                        yy = y[t_hat:t_hat + len_set]
+                        if t_hat + len_set == T:  # |s|_1 instead |c|_1
+                            tmp = ((q.dot(yy) - lam) * (1 - g * g) /
+                                   (1 - g**(2 * len_set))) * q - yy
+                        else:
+                            tmp = ((q.dot(yy) - lam * (1 - g**len_set)) * (1 - g * g) /
+                                   (1 - g**(2 * len_set))) * q - yy
+                        return tmp.dot(tmp)
+                    return sum([foo(y, P[t][2], P[t][3], h[:P[t][3]], g)
+                                for t in idx[-optimize_g:]])
+
+                def baz(y, P):
+                    return fminbound(lambda x: bar(y, x, P), 0, 1, xtol=1e-4, maxfun=50)  # minimizes residual
+                aa = baz(y, P)
+                if abs(aa - g) < 1e-4:
+                    g_converged = True
+                g = aa
+                # explicit kernel, useful for constructing c
+                h = np.exp(log(g) * np.arange(T))
+                for a in P:
+                    q = h[:a[3]]
+                    a[0] = q.dot(y[a[2]:a[2] + a[3]]) - lam * (1 - g**a[3])
+                    a[1] = q.dot(q)
+                P[-1][0] -= lam * g**P[-1][3]  # |s|_1 instead |c|_1
+                c, P = oasis(P, g, h, c)
+            # calc RSS
+            res = y - c
+            RSS = res.dot(res)
 
     else:  # optimize b and dependent on optimize_g g too
         b = np.percentile(y, 15)  # initial estimate of baseline
@@ -293,8 +322,6 @@ def constrained_oasisAR1(np.ndarray[DOUBLE, ndim=1] y, DOUBLE g, DOUBLE sn,
         res = y - b - c
         RSS = res.dot(res)
         tmp = np.empty(len(c))
-        g_converged = False
-        count = 0
         # until noise constraint is tight or spike train is empty or max_iter reached
         while abs(RSS - thresh) > thresh * 1e-4 and sum(c) > 1e-9 and count < max_iter:
             count += 1
@@ -332,7 +359,7 @@ def constrained_oasisAR1(np.ndarray[DOUBLE, ndim=1] y, DOUBLE g, DOUBLE sn,
             # update g and b
             if optimize_g and count < max_iter - 1 and (not g_converged):
                 ma = max([a[3] for a in P])
-                tdx = np.argsort([a[0] for a in P])
+                idx = np.argsort([a[0] for a in P])
 
                 def bar(y, opt, P):
                     b, g = opt
@@ -348,7 +375,7 @@ def constrained_oasisAR1(np.ndarray[DOUBLE, ndim=1] y, DOUBLE g, DOUBLE sn,
                                    (1 - g**(2 * len_set))) * q - yy
                         return tmp.dot(tmp)
                     return sum([foo(y, P[t][2], P[t][3], h[:P[t][3]], b, g)
-                                for t in tdx[-optimize_g:]])
+                                for t in idx[-optimize_g:]])
 
                 def baz(y, P):
                     return minimize(lambda x: bar(y, x, P), (b, g),
@@ -406,8 +433,7 @@ def constrained_oasisAR1(np.ndarray[DOUBLE, ndim=1] y, DOUBLE g, DOUBLE sn,
         c, P = oasis(P, g, h, c)
 
     if penalty == 0:  # get (locally optimal) L0 solution
-        lls = [(P[t + 1][0] / P[t + 1][1] -
-                P[t][0] / P[t][1] * g**P[t][3])
+        lls = [(P[t + 1][0] / P[t + 1][1] - P[t][0] / P[t][1] * g**P[t][3])
                for t in xrange(len(P) - 1)]
         pos = [P[t + 1][2] for t in np.argsort(lls)[::-1]]
         y = y - b
@@ -504,8 +530,7 @@ def oasisAR2(np.ndarray[DOUBLE, ndim=1] y, DOUBLE g1, DOUBLE g2,
     i = 0
     while i < len_P - 1:
         while (i < len_P - 1 and  # predict
-               (((g11[P[i][3]] * P[i][0]
-                  + g12[P[i][3]] * P[i - 1][1])
+               (((g11[P[i][3]] * P[i][0] + g12[P[i][3]] * P[i - 1][1])
                  <= P[i + 1][0] - s_min) if i > 0 else
                 (P[i][1] * d <= P[i + 1][0] - s_min))):
             i += 1
@@ -515,11 +540,9 @@ def oasisAR2(np.ndarray[DOUBLE, ndim=1] y, DOUBLE g1, DOUBLE g2,
         P[i][3] += P[i + 1][3]
         l = P[i][3] - 1
         if i > 0:
-            P[i][0] = (g11[:l + 1].dot(
-                _y[P[i][2]:P[i][2] + P[i][3]])
-                - g11g12[l] * P[i - 1][1]) / g11g11[l]
-            P[i][1] = (g11[l] * P[i][0]
-                       + g12[l] * P[i - 1][1])
+            P[i][0] = (g11[:l + 1].dot(_y[P[i][2]:P[i][2] + P[i][3]])
+                       - g11g12[l] * P[i - 1][1]) / g11g11[l]
+            P[i][1] = (g11[l] * P[i][0] + g12[l] * P[i - 1][1])
         else:  # update first pool too instead of taking it granted as true
             P[i][0] = max(0, np.exp(log(d) * np.arange(l + 1)).dot(
                 _y[:P[i][3]]) * (1 - d * d) / (1 - d**(2 * (l + 1))))
@@ -528,20 +551,16 @@ def oasisAR2(np.ndarray[DOUBLE, ndim=1] y, DOUBLE g1, DOUBLE g2,
         len_P -= 1
 
         while (i > 0 and  # backtrack until violations fixed
-               (((g11[P[i - 1][3]] * P[i - 1][0]
-                  + g12[P[i - 1][3]] * P[i - 2][1])
-                 > P[i][0] - s_min) if i > 1 else
-                (P[i - 1][1] * d > P[i][0] - s_min))):
+               (((g11[P[i - 1][3]] * P[i - 1][0] + g12[P[i - 1][3]] * P[i - 2][1])
+                 > P[i][0] - s_min) if i > 1 else (P[i - 1][1] * d > P[i][0] - s_min))):
             i -= 1
             # merge
             P[i][3] += P[i + 1][3]
             l = P[i][3] - 1
             if i > 0:
-                P[i][0] = (g11[:l + 1].dot(
-                    _y[P[i][2]:P[i][2] + P[i][3]])
-                    - g11g12[l] * P[i - 1][1]) / g11g11[l]
-                P[i][1] = (g11[l] * P[i][0]
-                           + g12[l] * P[i - 1][1])
+                P[i][0] = (g11[:l + 1].dot(_y[P[i][2]:P[i][2] + P[i][3]])
+                           - g11g12[l] * P[i - 1][1]) / g11g11[l]
+                P[i][1] = (g11[l] * P[i][0] + g12[l] * P[i - 1][1])
             else:  # update first pool too instead of taking it granted as true
                 P[i][0] = max(0, np.exp(log(d) * np.arange(l + 1)).dot(
                     _y[:P[i][3]]) * (1 - d * d) / (1 - d**(2 * (l + 1))))
@@ -555,7 +574,8 @@ def oasisAR2(np.ndarray[DOUBLE, ndim=1] y, DOUBLE g1, DOUBLE g2,
         for i in xrange(0, len(P) - 1):
             RSSold = np.inf
             for t in [-2, -1, 0]:
-                if P[i][3] + t > 0 and P[i + 1][3] - t > 0 and P[i + 1][2] + P[i + 1][3] - t <= len(_y):
+                if P[i][3] + t > 0 and P[i + 1][3] - t > 0\
+                        and P[i + 1][2] + P[i + 1][3] - t <= len(_y):
                     l = P[i][3] + t
                     if i == 0:
                         tmp = max(0, np.exp(log(d) * np.arange(l)).dot(_y[:l])
@@ -576,7 +596,8 @@ def oasisAR2(np.ndarray[DOUBLE, ndim=1] y, DOUBLE g1, DOUBLE g2,
                     l = P[i + 1][3] - t
                     tmp = (g11[:l].dot(_y[P[i + 1][2] + t:P[i + 1][2] + P[i + 1][3]])
                            - g11g12[l - 1] * ltmp) / g11g11[l - 1]
-                    if t != 0 and ((i > 0 and tmp < g1 * ltmp + g2 * ltmp2) or (i == 0 and tmp < d * ltmp)):
+                    if t != 0 and ((i > 0 and tmp < g1 * ltmp + g2 * ltmp2) or
+                                   (i == 0 and tmp < d * ltmp)):
                         continue  # don't allow negative spike
                     # new values of pool after jittered spike
                     tmparray = tmp * g11[:l] + ltmp * g12[:l]
@@ -613,7 +634,7 @@ def oasisAR2(np.ndarray[DOUBLE, ndim=1] y, DOUBLE g1, DOUBLE g2,
     return c, np.append([0, 0], c[2:] - g1 * c[1:-1] - g2 * c[:-2])
 
 
-# TODO: optimize risetime, warm starts
+# TODO: optimize risetime, warm starts, optimize g without optimizing b
 # N.B.: lam denotes the shift due to the sparsity penalty, i.e. is already multiplied by (1-g1-g2)
 def constrained_oasisAR2(np.ndarray[DOUBLE, ndim=1] y, DOUBLE g1, DOUBLE g2, DOUBLE sn,
                          bool optimize_b=False, bool b_nonneg=True, int optimize_g=0,
@@ -696,10 +717,8 @@ def constrained_oasisAR2(np.ndarray[DOUBLE, ndim=1] y, DOUBLE g1, DOUBLE g2, DOU
         i = 0
         while i < len_P - 1:
             while (i < len_P - 1 and  # predict
-                   (((g11[P[i][3]] * P[i][0]
-                      + g12[P[i][3]] * P[i - 1][1])
-                     <= P[i + 1][0]) if i > 0 else
-                    (P[i][1] * d <= P[i + 1][0]))):
+                   (((g11[P[i][3]] * P[i][0] + g12[P[i][3]] * P[i - 1][1])
+                     <= P[i + 1][0]) if i > 0 else (P[i][1] * d <= P[i + 1][0]))):
                 i += 1
             if i == len_P - 1:
                 break
@@ -707,11 +726,9 @@ def constrained_oasisAR2(np.ndarray[DOUBLE, ndim=1] y, DOUBLE g1, DOUBLE g2, DOU
             P[i][3] += P[i + 1][3]
             l = P[i][3] - 1
             if i > 0:
-                P[i][0] = (g11[:l + 1].dot(
-                    y[P[i][2]:P[i][2] + P[i][3]])
-                    - g11g12[l] * P[i - 1][1]) / g11g11[l]
-                P[i][1] = (g11[l] * P[i][0]
-                           + g12[l] * P[i - 1][1])
+                P[i][0] = (g11[:l + 1].dot(y[P[i][2]:P[i][2] + P[i][3]])
+                           - g11g12[l] * P[i - 1][1]) / g11g11[l]
+                P[i][1] = (g11[l] * P[i][0] + g12[l] * P[i - 1][1])
             else:  # update first pool too instead of taking it granted as true
                 P[i][0] = max(0, np.exp(log(d) * np.arange(l + 1)).dot(
                     y[:P[i][3]]) * (1 - d * d) / (1 - d**(2 * (l + 1))))
@@ -720,23 +737,19 @@ def constrained_oasisAR2(np.ndarray[DOUBLE, ndim=1] y, DOUBLE g1, DOUBLE g2, DOU
             len_P -= 1
 
             while (i > 0 and  # backtrack until violations fixed
-                   (((g11[P[i - 1][3]] * P[i - 1][0]
-                      + g12[P[i - 1][3]] * P[i - 2][1])
-                     > P[i][0]) if i > 1 else
-                    (P[i - 1][1] * d > P[i][0]))):
+                   (((g11[P[i - 1][3]] * P[i - 1][0] + g12[P[i - 1][3]] * P[i - 2][1])
+                     > P[i][0]) if i > 1 else (P[i - 1][1] * d > P[i][0]))):
                 i -= 1
                 # merge
                 P[i][3] += P[i + 1][3]
                 l = P[i][3] - 1
                 if i > 0:
-                    P[i][0] = (g11[:l + 1].dot(
-                        y[P[i][2]:P[i][2] + P[i][3]])
-                        - g11g12[l] * P[i - 1][1]) / g11g11[l]
-                    P[i][1] = (g11[l] * P[i][0]
-                               + g12[l] * P[i - 1][1])
+                    P[i][0] = (g11[:l + 1].dot(y[P[i][2]:P[i][2] + P[i][3]])
+                               - g11g12[l] * P[i - 1][1]) / g11g11[l]
+                    P[i][1] = (g11[l] * P[i][0] + g12[l] * P[i - 1][1])
                 else:  # update first pool too instead of taking it granted as true
-                    P[i][0] = max(0, np.exp(log(d) * np.arange(l + 1)).dot(
-                        y[:P[i][3]]) * (1 - d * d) / (1 - d**(2 * (l + 1))))
+                    P[i][0] = max(0, np.exp(log(d) * np.arange(l + 1)).dot(y[:P[i][3]]) *
+                                  (1 - d * d) / (1 - d**(2 * (l + 1))))
                     P[i][1] = d**l * P[i][0]
                 P.pop(i + 1)
                 len_P -= 1
@@ -766,7 +779,8 @@ def constrained_oasisAR2(np.ndarray[DOUBLE, ndim=1] y, DOUBLE g1, DOUBLE g2, DOU
                 l = a[3] - 1
                 if i == len(P) - 2:  # last pool
                     tmp[a[2]] = (1. / (1 - g1 - g2) if l == 0 else
-                                 (Sg11[l] + g2 / (1 - g1 - g2) * g11[a[3] - 2] + (g1 + g2) / (1 - g1 - g2) * g11[a[3] - 1]
+                                 (Sg11[l] + g2 / (1 - g1 - g2) * g11[a[3] - 2] +
+                                  (g1 + g2) / (1 - g1 - g2) * g11[a[3] - 1]
                                      - g11g12[l] * tmp[a[2] - 1]) / g11g11[l])
                 # secondlast pool if last one has length 1
                 elif i == len(P) - 3 and P[-1][-1] == 1:
@@ -805,8 +819,7 @@ def constrained_oasisAR2(np.ndarray[DOUBLE, ndim=1] y, DOUBLE g1, DOUBLE g2, DOU
             # correct last 2 elements for |s|_1 instead |c|_1
             tmp[-2] -= lam * g2 / (1 - g1 - g2)
             tmp[-1] -= lam * (g1 + g2) / (1 - g1 - g2)
-            c, P = oasis(tmp, P, c,
-                         g11, g12, g11g11, g11g12)
+            c, P = oasis(tmp, P, c, g11, g12, g11g11, g11g12)
             # calc RSS
             res = y - c
             RSS = res.dot(res)
