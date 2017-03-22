@@ -262,7 +262,7 @@ def constrained_oasisAR1(np.ndarray[DOUBLE, ndim=1] y, DOUBLE g, DOUBLE sn,
             P[-1][0] -= dlam  # correct last pool; |s|_1 instead |c|_1
             c, P = oasis(P, g, h, c)
 
-            # update g and b
+            # update g
             if optimize_g and count < max_iter - 1 and (not g_converged):
                 ma = max([a[3] for a in P])
                 idx = np.argsort([a[0] for a in P])

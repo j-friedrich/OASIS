@@ -553,10 +553,10 @@ def constrained_onnlsAR2(y, g, sn, optimize_b=True, b_nonneg=True, optimize_g=0,
     thresh = sn * sn * T
     # get initial estimate of b and lam on downsampled data using AR1 model
     if decimate > 0:
-        _, s, b, aa, lam = constrained_oasisAR1(y.reshape(-1, decimate).mean(1),
-                                                d**decimate, sn / sqrt(decimate),
-                                                optimize_b=optimize_b, b_nonneg=b_nonneg,
-                                                optimize_g=optimize_g)
+        _, s, b, aa, lam = constrained_oasisAR1(
+            y[:len(y) // decimate * decimate].reshape(-1, decimate).mean(1),
+            d**decimate, sn / sqrt(decimate),
+            optimize_b=optimize_b, b_nonneg=b_nonneg, optimize_g=optimize_g)
         if optimize_g:
             d = aa**(1. / decimate)
             if decimate > 1:
@@ -577,7 +577,7 @@ def constrained_onnlsAR2(y, g, sn, optimize_b=True, b_nonneg=True, optimize_g=0,
         # s = oasisAR1(s, r)[1]
         # this window size seems necessary and sufficient
         ff = np.ravel([a + np.arange(-2, 2) for a in np.where(s > s.max() / 10.)[0]])
-        ff = np.unique(ff[(ff >= 0) * (ff < T)])
+        ff = np.unique(ff[(ff >= 0) * (ff < T)]).astype(int)
         mask = np.zeros(T, dtype=bool)
         mask[ff] = True
     else:
@@ -589,8 +589,8 @@ def constrained_onnlsAR2(y, g, sn, optimize_b=True, b_nonneg=True, optimize_g=0,
     # run ONNLS
     c, s = onnls(y - b, g, lam=lam, mask=mask,
                  shift=shift, window=window, tol=tol)
-
-    if not optimize_b:  # don't optimize b, just the dual variable lambda
+    g_converged = False
+    if not optimize_b:  # don't optimize b, just the dual variable lambda and g if optimize_g
         for i in range(max_iter - 1):
             res = y - c
             RSS = res.dot(res)
@@ -622,22 +622,41 @@ def constrained_onnlsAR2(y, g, sn, optimize_b=True, b_nonneg=True, optimize_g=0,
             bb = res.dot(tmp)
             cc = RSS - thresh
             try:
-                db = (-bb + sqrt(bb * bb - aa * cc)) / aa
+                dlam = (-bb + sqrt(bb * bb - aa * cc)) / aa
             except:
-                db = -bb / aa
+                dlam = -bb / aa
             # perform shift
-            b += db
-            c, s = onnls(y - b, g, lam=lam, mask=mask,
-                         shift=shift, window=window, tol=tol)
-            db = np.mean(y - c) - b
-            b += db
-            lam -= db / f_lam
+            lam += dlam / f_lam
+            c, s = onnls(y, g, lam=lam, mask=mask, shift=shift, window=window, tol=tol)
+
+            # update g
+            if optimize_g and (not g_converged):
+                lengths = np.where(s)[0][1:] - np.where(s)[0][:-1]
+
+                def getRSS(y, opt):
+                    ld, lr = opt
+                    if ld < lr:
+                        return 1e3 * thresh
+                    d, r = exp(ld), exp(lr)
+                    g1, g2 = d + r, -d * r
+                    tmp = onnls(y, [g1, g2], lam, mask=(s > 1e-2 * s.max()))[0] - y
+                    return tmp.dot(tmp)
+
+                result = minimize(lambda x: getRSS(y, x), (log(d), log(r)),
+                                  bounds=((None, -1e-4), (None, -1e-3)), method='L-BFGS-B',
+                                  options={'gtol': 1e-04, 'maxiter': 10, 'ftol': 1e-05})
+                if abs(result['x'][1] - log(d)) < 1e-4:
+                    g_converged = True
+                ld, lr = result['x']
+                d, r = exp(ld), exp(lr)
+                g = (d + r, -d * r)
+                c, s = onnls(y, g, lam=lam, mask=mask,
+                             shift=shift, window=window, tol=tol)
 
     else:  # optimize b
         db = max(np.mean(y - c), 0 if b_nonneg else -np.inf) - b
         b += db
         lam -= db / (1 - g[0] - g[1])
-        g_converged = False
         for i in range(max_iter - 1):
             res = y - c - b
             RSS = res.dot(res)
