@@ -30,6 +30,8 @@ To clean up temporary files follow it by:
 The scripts to produce the figures and table are in the subfolder 'examples' with names obvious from the PLoS Comput Biol paper. 
 They can be run with `python examples/fig[1-6].py`. 
 
+The results of fig4 and table1 will be even better than in the paper, because the version in the master branch includes later improvements, in patricularly up to an order of magnitude less computing time. The specific points in history marking the time of the publications have been tagged.
+
 To demonstrate how to use the methods on your own data, we included a demo jupyter notebook in the subfolder 'examples' as well. 
 
 ## Other implementations

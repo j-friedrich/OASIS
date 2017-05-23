@@ -6,13 +6,22 @@ Created on Mon Apr 4 18:21:13 2016
 
 import numpy as np
 cimport numpy as np
-from libc.math cimport sqrt, log, exp
+cimport cython
+from libc.math cimport sqrt, log, exp, fmax, fabs
 from scipy.optimize import fminbound, minimize
 from cpython cimport bool
+from libcpp.vector cimport vector
 
 ctypedef np.float_t DOUBLE
 
+cdef struct Pool:
+    DOUBLE v
+    DOUBLE w
+    Py_ssize_t t
+    Py_ssize_t l
 
+
+@cython.cdivision(True)
 def oasisAR1(np.ndarray[DOUBLE, ndim=1] y, DOUBLE g, DOUBLE lam=0, DOUBLE s_min=0):
     """ Infer the most likely discretized spike train underlying an AR(1) fluorescence trace
 
@@ -45,49 +54,48 @@ def oasisAR1(np.ndarray[DOUBLE, ndim=1] y, DOUBLE g, DOUBLE lam=0, DOUBLE s_min=
     """
 
     cdef:
-        Py_ssize_t i, t, f, l
-        unsigned int len_P
-        DOUBLE v, w
-        np.ndarray[DOUBLE, ndim = 1] c, h
+        Py_ssize_t i, j, k, t, T
+        DOUBLE tmp
+        np.ndarray[DOUBLE, ndim = 1] c, s
+        vector[Pool] P
+        Pool newpool
 
     T = len(y)
-    c = np.empty(T)
     # [value, weight, start time, length] of pool
-    P = [[y[t] - lam * (1 - g), 1, t, 1] for t in range(2)]
-    i = 0
-    t = 1
+    newpool.v, newpool.w, newpool.t, newpool.l = y[0] - lam * (1 - g), 1, 0, 1
+    P.push_back(newpool)
+    i = 0  # index of last pool
+    t = 1  # number of time points added = index of next data point
     while t < T:
-        while t < T and (P[i][0] / P[i][1] * g**P[i][3] + s_min <= P[i + 1][0] / P[i + 1][1]):
-            i += 1
-            t = P[i][2] + P[i][3]
-            if t < T:
-                P.append([y[t] - lam * (1 if t == T - 1 else (1 - g)), 1, t, 1])
-        if t == T:
-            break
-        # merge two pools
-        P[i][0] += P[i + 1][0] * g**P[i][3]
-        P[i][1] += P[i + 1][1] * g**(2 * P[i][3])
-        P[i][3] += P[i + 1][3]
-        P.pop(i + 1)
+        # add next data point as pool
+        newpool.v = y[t] - lam * (1 if t == T - 1 else (1 - g))
+        newpool.w, newpool.t, newpool.l = 1, t, 1
+        P.push_back(newpool)
+        t += 1
+        i += 1
         while (i > 0 and  # backtrack until violations fixed
-               (P[i - 1][0] / P[i - 1][1] * g**P[i - 1][3] + s_min > P[i][0] / P[i][1])):
+               (P[i - 1].v / P[i - 1].w * g**P[i - 1].l + s_min > P[i].v / P[i].w)):
             i -= 1
             # merge two pools
-            P[i][0] += P[i + 1][0] * g**P[i][3]
-            P[i][1] += P[i + 1][1] * g**(2 * P[i][3])
-            P[i][3] += P[i + 1][3]
-            P.pop(i + 1)
-        t = P[i][2] + P[i][3]
-        if t < T:
-            P.append([y[t] - lam * (1 if t == T - 1 else (1 - g)), 1, t, 1])
+            P[i].v += P[i + 1].v * g**P[i].l
+            P[i].w += P[i + 1].w * g**(2 * P[i].l)
+            P[i].l += P[i + 1].l
+            P.pop_back()
     # construct c
-    # calc explicit kernel h up to required length just once
-    h = np.exp(log(g) * np.arange(max([a[-1] for a in P])))
-    for v, w, f, l in P:
-        c[f:f + l] = max(v, 0) / w * h[:l]
-    return c, np.append(0, c[1:] - g * c[:-1])
+    c = np.empty(T)
+    for j in range(i + 1):
+        tmp = fmax(P[j].v, 0) / P[j].w
+        for k in range(P[j].l):
+            c[k + P[j].t] = tmp
+            tmp *= g
+    # construct s
+    s = c.copy()
+    s[0] = 0
+    s[1:] -= g * c[:-1]
+    return c, s
 
 
+@cython.cdivision(True)
 def constrained_oasisAR1(np.ndarray[DOUBLE, ndim=1] y, DOUBLE g, DOUBLE sn,
                          bool optimize_b=False, bool b_nonneg=True, int optimize_g=0,
                          int decimate=1, int max_iter=5, int penalty=1):
@@ -139,12 +147,14 @@ def constrained_oasisAR1(np.ndarray[DOUBLE, ndim=1] y, DOUBLE g, DOUBLE sn,
     """
 
     cdef:
-        Py_ssize_t i, t, f, l
-        unsigned int len_P, ma, count, T
+        Py_ssize_t i, j, k, t, l
+        unsigned int ma, count, T
         DOUBLE thresh, v, w, RSS, aa, bb, cc, lam, dlam, b, db, dphi
         bool g_converged
         np.ndarray[DOUBLE, ndim = 1] c, res, tmp, fluor, h
         np.ndarray[long, ndim = 1] ff, ll
+        vector[Pool] P
+        Pool newpool
 
     T = len(y)
     thresh = sn * sn * T
@@ -158,144 +168,142 @@ def constrained_oasisAR1(np.ndarray[DOUBLE, ndim=1] y, DOUBLE g, DOUBLE sn,
     c = np.empty(T)
     # [value, weight, start time, length] of pool
     lam = 0  # sn/sqrt(1-g*g)
-    if T < 5000:  # for 5000 or more frames grow set of pools in first run: faster & memory
-        # P = [[y[t] - lam * (1 - g), 1, t, 1] for t in range(len_P)]
-        # P[-1][0] = y[-1] - lam
-        P = [[y[t], 1, t, 1] for t in range(T)]
-    else:
-        def oasis1strun(y, g, h, c):
-            T = len(y)
-            # c = np.empty(T)
-            # [value, weight, start time, length] of pool
-            # P = [[y[t] - lam * (1 - g), 1, t, 1] for t in range(2)]
-            P = [[y[t], 1, t, 1] for t in [0, 1]]
-            i = 0
-            t = 1
-            while t < T:
-                while t < T and (P[i][0] * P[i + 1][1] * g**P[i][3] <= P[i][1] * P[i + 1][0]):
-                    i += 1
-                    t = P[i][2] + P[i][3]
-                    if t < T:
-                        # P.append([y[t] - lam * (1 if t == T - 1 else (1 - g)), 1, t, 1])
-                        P.append([y[t], 1, t, 1])
-                if t == T:
-                    break
-                # merge two pools
-                P[i][0] += P[i + 1][0] * g**P[i][3]
-                P[i][1] += P[i + 1][1] * g**(2 * P[i][3])
-                P[i][3] += P[i + 1][3]
-                P.pop(i + 1)
-                while (i > 0 and  # backtrack until violations fixed
-                       (P[i - 1][0] * P[i][1] * g**P[i - 1][3] > P[i - 1][1] * P[i][0])):
-                    i -= 1
-                    # merge two pools
-                    P[i][0] += P[i + 1][0] * g**P[i][3]
-                    P[i][1] += P[i + 1][1] * g**(2 * P[i][3])
-                    P[i][3] += P[i + 1][3]
-                    P.pop(i + 1)
-                t = P[i][2] + P[i][3]
-                if t < T:
-                    # P.append([y[t] - lam * (1 if t == T - 1 else (1 - g)), 1, t, 1])
-                    P.append([y[t], 1, t, 1])
-            # construct c
-            for v, w, f, l in P:
-                c[f:f + l] = v / w * h[:l]
-            c[c < 0] = 0
-            return c, P
 
-    def oasis(P, g, h, c):
-        c = np.empty(P[-1][2] + P[-1][3])
-        len_P = len(P)
-        i = 0
-        while i < len_P - 1:
-            while i < len_P - 1 and (P[i][0] * P[i + 1][1] * g**P[i][3] <= P[i][1] * P[i + 1][0]):
-                i += 1
-            if i == len_P - 1:
-                break
-            # merge two pools
-            P[i][0] += P[i + 1][0] * g**P[i][3]
-            P[i][1] += P[i + 1][1] * g**(2 * P[i][3])
-            P[i][3] += P[i + 1][3]
-            P.pop(i + 1)
-            len_P -= 1
+    def oasis1strun(np.ndarray[DOUBLE, ndim=1] y, DOUBLE g, np.ndarray[DOUBLE, ndim=1] c):
+
+        cdef:
+            Py_ssize_t i, j, k, t, T
+            DOUBLE tmp
+            vector[Pool] P
+            Pool newpool
+
+        T = len(y)
+        # [value, weight, start time, length] of pool
+        # newpool.v, newpool.w, newpool.t, newpool.l = y[0] - lam * (1 - g), 1, 0, 1
+        newpool.v, newpool.w, newpool.t, newpool.l = y[0], 1, 0, 1
+        P.push_back(newpool)
+        i = 0  # index of last pool
+        t = 1  # number of time points added = index of next data point
+        while t < T:
+            # add next data point as pool
+            newpool.v = y[t]  # - lam * (1 if t == T - 1 else (1 - g))
+            newpool.w, newpool.t, newpool.l = 1, t, 1
+            P.push_back(newpool)
+            t += 1
+            i += 1
             while (i > 0 and  # backtrack until violations fixed
-                   (P[i - 1][0] * P[i][1] * g**P[i - 1][3] > P[i - 1][1] * P[i][0])):
+                   (P[i - 1].v / P[i - 1].w * g**P[i - 1].l > P[i].v / P[i].w)):
                 i -= 1
                 # merge two pools
-                P[i][0] += P[i + 1][0] * g**P[i][3]
-                P[i][1] += P[i + 1][1] * g**(2 * P[i][3])
-                P[i][3] += P[i + 1][3]
-                P.pop(i + 1)
-                len_P -= 1
+                P[i].v += P[i + 1].v * g**P[i].l
+                P[i].w += P[i + 1].w * g**(2 * P[i].l)
+                P[i].l += P[i + 1].l
+                P.pop_back()
         # construct c
-        for v, w, f, l in P:
-            c[f:f + l] = v / w * h[:l]
-        c[c < 0] = 0
+        c = np.empty(T)
+        for j in range(i + 1):
+            tmp = fmax(P[j].v, 0) / P[j].w
+            for k in range(P[j].l):
+                c[k + P[j].t] = tmp
+                tmp *= g
+        return c, P
+
+    def oasis(vector[Pool] P, DOUBLE g, np.ndarray[DOUBLE, ndim=1] c):
+
+        cdef:
+            Py_ssize_t i, j, k
+            DOUBLE tmp
+
+        i = 0
+        while i < P.size() - 1:
+            i += 1
+            while (i > 0 and  # backtrack until violations fixed
+                   (P[i - 1].v / P[i - 1].w * g**P[i - 1].l > P[i].v / P[i].w)):
+                i -= 1
+                # merge two pools
+                P[i].v += P[i + 1].v * g**P[i].l
+                P[i].w += P[i + 1].w * g**(2 * P[i].l)
+                P[i].l += P[i + 1].l
+                P.erase(P.begin() + i + 1)
+        # construct c
+        c = np.empty(P[P.size() - 1].t + P[P.size() - 1].l)
+        for j in range(i + 1):
+            tmp = fmax(P[j].v, 0) / P[j].w
+            for k in range(P[j].l):
+                c[k + P[j].t] = tmp
+                tmp *= g
         return c, P
 
     g_converged = False
     count = 0
     if not optimize_b:  # don't optimize b, just the dual variable lambda and g if optimize_g>0
-        if T < 5000:
-            c, P = oasis(P, g, h, c)
-        else:
-            c, P = oasis1strun(y, g, h, c)
+        c, P = oasis1strun(y, g, c)
         tmp = np.empty(len(c))
         res = y - c
         RSS = (res).dot(res)
         b = 0
         # until noise constraint is tight or spike train is empty
-        while RSS < thresh * (1 - 1e-4) and sum(c) > 1e-9:
+        while RSS < thresh * (1 - 1e-4) and c.sum() > 1e-9:
             # update lam
-            for t, (v, w, f, l) in enumerate(P):
-                if t == len(P) - 1:  # for |s|_1 instead |c|_1 sparsity
-                    tmp[f:f + l] = 1 / w * h[:l]
+            for i in range(P.size()):
+                if i == P.size() - 1:  # for |s|_1 instead |c|_1 sparsity
+                    # faster than tmp[P[i].t:P[i].t + P[i].l] = 1 / P[i].w * h[:P[i].l]
+                    aa = 1 / P[i].w
+                    for j in range(P[i].l):
+                        tmp[P[i].t + j] = aa
+                        aa *= g
                 else:
-                    tmp[f:f + l] = (1 - g**l) / w * h[:l]
+                    aa = (1 - g**P[i].l) / P[i].w
+                    for j in range(P[i].l):
+                        tmp[P[i].t + j] = aa
+                        aa *= g
             aa = tmp.dot(tmp)
             bb = res.dot(tmp)
             cc = RSS - thresh
             dlam = (-bb + sqrt(bb * bb - aa * cc)) / aa
             lam += dlam
-            for a in P[:-1]:     # perform shift
-                a[0] -= dlam * (1 - g**a[3])
-            P[-1][0] -= dlam  # correct last pool; |s|_1 instead |c|_1
-            c, P = oasis(P, g, h, c)
+            for i in range(P.size() - 1):  # perform shift
+                P[i].v -= dlam * (1 - g**P[i].l)
+            P[P.size() - 1].v -= dlam  # correct last pool; |s|_1 instead |c|_1
+            c, P = oasis(P, g, c)
 
             # update g
             if optimize_g and count < max_iter - 1 and (not g_converged):
-                ma = max([a[3] for a in P])
-                idx = np.argsort([a[0] for a in P])
+                ma = max([P[i].l for i in range(P.size())])
+                idx = np.argsort([P[i].v for i in range(P.size())])
+                Pt = [P[i].t for i in idx[-optimize_g:]]
+                Pl = [P[i].l for i in idx[-optimize_g:]]
 
-                def bar(y, g, P):
+                def bar(y, g, Pt, Pl):
                     h = np.exp(log(g) * np.arange(ma))
 
-                    def foo(y, t_hat, len_set, q, g, lam=lam):
-                        yy = y[t_hat:t_hat + len_set]
-                        if t_hat + len_set == T:  # |s|_1 instead |c|_1
+                    def foo(y, t, l, q, g, lam=lam):
+                        yy = y[t:t + l]
+                        if t + l == T:  # |s|_1 instead |c|_1
                             tmp = ((q.dot(yy) - lam) * (1 - g * g) /
-                                   (1 - g**(2 * len_set))) * q - yy
+                                   (1 - g**(2 * l))) * q - yy
                         else:
-                            tmp = ((q.dot(yy) - lam * (1 - g**len_set)) * (1 - g * g) /
-                                   (1 - g**(2 * len_set))) * q - yy
+                            tmp = ((q.dot(yy) - lam * (1 - g**l)) * (1 - g * g) /
+                                   (1 - g**(2 * l))) * q - yy
                         return tmp.dot(tmp)
-                    return sum([foo(y, P[t][2], P[t][3], h[:P[t][3]], g)
-                                for t in idx[-optimize_g:]])
+                    return sum([foo(y, Pt[i], Pl[i], h[:Pl[i]], g)
+                                for i in range(optimize_g)])
 
-                def baz(y, P):
-                    return fminbound(lambda x: bar(y, x, P), 0, 1, xtol=1e-4, maxfun=50)  # minimizes residual
-                aa = baz(y, P)
+                def baz(y, Pt, Pl):
+                    # minimizes residual
+                    return fminbound(lambda x: bar(y, x, Pt, Pl), 0, 1, xtol=1e-4, maxfun=50)
+                aa = baz(y, Pt, Pl)
                 if abs(aa - g) < 1e-4:
                     g_converged = True
                 g = aa
                 # explicit kernel, useful for constructing c
                 h = np.exp(log(g) * np.arange(T))
-                for a in P:
-                    q = h[:a[3]]
-                    a[0] = q.dot(y[a[2]:a[2] + a[3]]) - lam * (1 - g**a[3])
-                    a[1] = q.dot(q)
-                P[-1][0] -= lam * g**P[-1][3]  # |s|_1 instead |c|_1
-                c, P = oasis(P, g, h, c)
+                for i in range(P.size()):
+                    q = h[:P[i].l]
+                    P[i].v = q.dot(y[P[i].t:P[i].t + P[i].l]) - lam * (1 - g**P[i].l)
+                    P[i].w = q.dot(q)
+                P[P.size() - 1].v -= lam * g**P[P.size() - 1].l  # |s|_1 instead |c|_1
+                c, P = oasis(P, g, c)
             # calc RSS
             res = y - c
             RSS = res.dot(res)
@@ -303,36 +311,38 @@ def constrained_oasisAR1(np.ndarray[DOUBLE, ndim=1] y, DOUBLE g, DOUBLE sn,
     else:  # optimize b and dependent on optimize_g g too
         b = np.percentile(y, 15)  # initial estimate of baseline
         if b_nonneg:
-            b = max(b, 0)
-        if T < 5000:
-            for a in P:   # subtract baseline
-                a[0] -= b
-            c, P = oasis(P, g, h, c)
-        else:
-            c, P = oasis1strun(y - b, g, h, c)
+            b = fmax(b, 0)
+        c, P = oasis1strun(y - b, g, c)
         # update b and lam
-        db = max(np.mean(y - c), 0 if b_nonneg else -np.inf) - b
+        db = fmax(np.mean(y - c), 0 if b_nonneg else -np.inf) - b
         b += db
         lam -= db / (1 - g)
         # correct last pool
-        P[-1][0] -= lam * g**P[-1][3]  # |s|_1 instead |c|_1
-        v, w, f, l = P[-1]
-        c[f:f + l] = max(0, v) / w * h[:l]
+        i = P.size() - 1
+        P[i].v -= lam * g**P[i].l  # |s|_1 instead |c|_1
+        c[P[i].t:P[i].t + P[i].l] = fmax(0, P[i].v) / P[i].w * h[:P[i].l]
         # calc RSS
         res = y - b - c
         RSS = res.dot(res)
         tmp = np.empty(len(c))
         # until noise constraint is tight or spike train is empty or max_iter reached
-        while abs(RSS - thresh) > thresh * 1e-4 and sum(c) > 1e-9 and count < max_iter:
+        while fabs(RSS - thresh) > thresh * 1e-4 and c.sum() > 1e-9 and count < max_iter:
             count += 1
             # update lam and b
             # calc total shift dphi due to contribution of baseline and lambda
-            for t, (v, w, f, l) in enumerate(P):
-                if t == len(P) - 1:  # for |s|_1 instead |c|_1 sparsity
-                    tmp[f:f + l] = 1 / w * h[:l]
+            for i in range(P.size()):
+                if i == P.size() - 1:  # for |s|_1 instead |c|_1 sparsity
+                    aa = 1 / P[i].w
+                    for j in range(P[i].l):
+                        tmp[P[i].t + j] = aa
+                        aa *= g
                 else:
-                    tmp[f:f + l] = (1 - g**l) / w * h[:l]
-            tmp -= 1. / T / (1 - g) * np.sum([(1 - g**l)**2 / w for (_, w, _, l) in P])
+                    aa = (1 - g**P[i].l) / P[i].w
+                    for j in range(P[i].l):
+                        tmp[P[i].t + j] = aa
+                        aa *= g
+            tmp -= 1. / T / (1 - g) * np.sum([(1 - g**P[i].l) ** 2 / P[i].w
+                                              for i in range(P.size())])
             aa = tmp.dot(tmp)
             bb = res.dot(tmp)
             cc = RSS - thresh
@@ -341,68 +351,71 @@ def constrained_oasisAR1(np.ndarray[DOUBLE, ndim=1] y, DOUBLE g, DOUBLE sn,
             else:
                 dphi = -bb / aa
             if b_nonneg:
-                dphi = max(dphi, -b / (1 - g))
+                dphi = fmax(dphi, -b / (1 - g))
             b += dphi * (1 - g)
-            for a in P:     # perform shift
-                a[0] -= dphi * (1 - g**a[3])
-            c, P = oasis(P, g, h, c)
+            for i in range(P.size()):  # perform shift
+                P[i].v -= dphi * (1 - g**P[i].l)
+            c, P = oasis(P, g, c)
             # update b and lam
-            db = max(np.mean(y - c), 0 if b_nonneg else -np.inf) - b
+            db = fmax(np.mean(y - c), 0 if b_nonneg else -np.inf) - b
             b += db
             dlam = -db / (1 - g)
             lam += dlam
             # correct last pool
-            P[-1][0] -= dlam * g**P[-1][3]  # |s|_1 instead |c|_1
-            v, w, f, l = P[-1]
-            c[f:f + l] = max(0, v) / w * h[:l]
+            i = P.size() - 1
+            P[i].v -= dlam * g**P[i].l  # |s|_1 instead |c|_1
+            c[P[i].t:P[i].t + P[i].l] = fmax(0, P[i].v) / P[i].w * h[:P[i].l]
 
             # update g and b
             if optimize_g and count < max_iter - 1 and (not g_converged):
-                ma = max([a[3] for a in P])
-                idx = np.argsort([a[0] for a in P])
+                ma = max([P[i].l for i in range(P.size())])
+                idx = np.argsort([P[i].v for i in range(P.size())])
+                Pt = [P[i].t for i in idx[-optimize_g:]]
+                Pl = [P[i].l for i in idx[-optimize_g:]]
 
-                def bar(y, opt, P):
+                def bar(y, opt, Pt, Pl):
                     b, g = opt
                     h = np.exp(log(g) * np.arange(ma))
 
-                    def foo(y, t_hat, len_set, q, b, g, lam=lam):
-                        yy = y[t_hat:t_hat + len_set] - b
-                        if t_hat + len_set == T:  # |s|_1 instead |c|_1
+                    def foo(y, t, l, q, b, g, lam=lam):
+                        yy = y[t:t + l] - b
+                        if t + l == T:  # |s|_1 instead |c|_1
                             tmp = ((q.dot(yy) - lam) * (1 - g * g) /
-                                   (1 - g**(2 * len_set))) * q - yy
+                                   (1 - g**(2 * l))) * q - yy
                         else:
-                            tmp = ((q.dot(yy) - lam * (1 - g**len_set)) * (1 - g * g) /
-                                   (1 - g**(2 * len_set))) * q - yy
+                            tmp = ((q.dot(yy) - lam * (1 - g**l)) * (1 - g * g) /
+                                   (1 - g**(2 * l))) * q - yy
                         return tmp.dot(tmp)
-                    return sum([foo(y, P[t][2], P[t][3], h[:P[t][3]], b, g)
-                                for t in idx[-optimize_g:]])
+                    return sum([foo(y, Pt[i], Pl[i], h[:Pl[i]], b, g)
+                                for i in range(P.size() if P.size() < optimize_g else optimize_g)])
 
-                def baz(y, P):
-                    return minimize(lambda x: bar(y, x, P), (b, g),
+                def baz(y, Pt, Pl):
+                    return minimize(lambda x: bar(y, x, Pt, Pl), (b, g),
                                     bounds=((0 if b_nonneg else None, None), (.001, .999)),
                                     method='L-BFGS-B',
                                     options={'gtol': 1e-04, 'maxiter': 3, 'ftol': 1e-05})
-                result = baz(y, P)
-                if abs(result['x'][1] - g) < 1e-3:
+                result = baz(y, Pt, Pl)
+                if fabs(result['x'][1] - g) < 1e-3:
                     g_converged = True
                 b, g = result['x']
                 # explicit kernel, useful for constructing c
                 h = np.exp(log(g) * np.arange(T))
-                for a in P:
-                    q = h[:a[3]]
-                    a[0] = q.dot(y[a[2]:a[2] + a[3]]) - (b / (1 - g) + lam) * (1 - g**a[3])
-                    a[1] = q.dot(q)
-                P[-1][0] -= lam * g**P[-1][3]  # |s|_1 instead |c|_1
-                c, P = oasis(P, g, h, c)
+                for i in range(P.size()):
+                    q = h[:P[i].l]
+                    P[i].v = q.dot(y[P[i].t:P[i].t + P[i].l]) - \
+                        (b / (1 - g) + lam) * (1 - g**P[i].l)
+                    P[i].w = q.dot(q)
+                P[P.size() - 1].v -= lam * g**P[P.size() - 1].l  # |s|_1 instead |c|_1
+                c, P = oasis(P, g, c)
                 # update b and lam
-                db = max(np.mean(y - c), 0 if b_nonneg else -np.inf) - b
+                db = fmax(np.mean(y - c), 0 if b_nonneg else -np.inf) - b
                 b += db
                 dlam = -db / (1 - g)
                 lam += dlam
                 # correct last pool
-                P[-1][0] -= dlam * g**P[-1][3]  # |s|_1 instead |c|_1
-                v, w, f, l = P[-1]
-                c[f:f + l] = max(0, v) / w * h[:l]
+                i = P.size() - 1
+                P[i].v -= dlam * g**P[i].l  # |s|_1 instead |c|_1
+                c[P[i].t:P[i].t + P[i].l] = fmax(0, P[i].v) / P[i].w * h[:P[i].l]
 
             # calc RSS
             res = y - c - b
@@ -410,61 +423,69 @@ def constrained_oasisAR1(np.ndarray[DOUBLE, ndim=1] y, DOUBLE g, DOUBLE sn,
 
     if decimate > 1:  # deal with full data
         y = fluor
-        lam = lam * (1 - g)
+        lam *= (1 - g)
         g = g**(1. / decimate)
-        lam = lam / (1 - g)
+        lam /= (1 - g)
         thresh = thresh * decimate * decimate
         T = len(fluor)
         # warm-start active set
-        ff = np.ravel([a[2] * decimate + np.arange(-decimate, 3 * decimate / 2)
-                       for a in P])  # this window size seems necessary and sufficient
+        ff = np.ravel([P[i].t * decimate + np.arange(-decimate, 3 * decimate / 2)
+                       for i in range(P.size())])  # this window size seems necessary and sufficient
         ff = np.unique(ff[(ff >= 0) * (ff < T)])
         ll = np.append(ff[1:] - ff[:-1], T - ff[-1])
-        P = list(map(list, zip([0.] * len(ll), [0.] * len(ll), list(ff), list(ll))))
-        ma = max([a[3] for a in P])
         h = np.exp(log(g) * np.arange(T))
-        for a in P:
-            q = h[:a[3]]
-            a[0] = q.dot(fluor[a[2]:a[2] + a[3]]) - (b / (1 - g) + lam) * (1 - g**a[3])
-            a[1] = q.dot(q)
-        P[-1][0] -= lam * g**P[-1][3]  # |s|_1 instead |c|_1
+        P.resize(0)
+        for i in range(len(ff)):
+            q = h[:ll[i]]
+            newpool.v = q.dot(fluor[ff[i]:ff[i] + ll[i]]) - (b / (1 - g) + lam) * (1 - g**ll[i])
+            newpool.w = q.dot(q)
+            newpool.t = ff[i]
+            newpool.l = ll[i]
+            P.push_back(newpool)
+        P[P.size() - 1].v -= lam * g**P[P.size() - 1].l  # |s|_1 instead |c|_1
         c = np.empty(T)
 
-        c, P = oasis(P, g, h, c)
+        c, P = oasis(P, g, c)
 
     if penalty == 0:  # get (locally optimal) L0 solution
-        lls = [(P[t + 1][0] / P[t + 1][1] - P[t][0] / P[t][1] * g**P[t][3])
-               for t in xrange(len(P) - 1)]
-        pos = [P[t + 1][2] for t in np.argsort(lls)[::-1]]
+        lls = [(P[i + 1].v / P[i + 1].w - P[i].v / P[i].w * g**P[i].l)
+               for i in range(P.size() - 1)]
+        pos = [P[i + 1].t for i in np.argsort(lls)[::-1]]
         y = y - b
         res = -y
         RSS = y.dot(y)
         c = np.zeros_like(y)
-        P = [[0, 1, 0, len(y)]]
+        P.resize(0)
+        newpool.v, newpool.w, newpool.t, newpool.l = 0, 1, 0, len(y)
+        P.push_back(newpool)
         for p in pos:
             i = 0
-            while P[i][2] + P[i][3] <= p:
+            while P[i].t + P[i].l <= p:
                 i += 1
             # split current pool at pos
-            v, w, f, l = P[i]
-            q = h[:f - p + l]
-            P.insert(i + 1, [q.dot(y[p:f + l]), q.dot(q), p, f - p + l])
-            q = h[:p - f]
-            P[i] = [q.dot(y[f:p]), q.dot(q), f, p - f]
+            j, k = P[i].t, P[i].l
+            q = h[:j - p + k]
+            newpool.v = q.dot(y[p:j + k])
+            newpool.w, newpool.t, newpool.l = q.dot(q), p, j - p + k
+            P.insert(P.begin() + i + 1, newpool)
+            q = h[:p - j]
+            P[i].v, P[i].w, P[i].t, P[i].l = q.dot(y[j:p]), q.dot(q), j, p - j
             for t in [i, i + 1]:
-                v, w, f, l = P[t]
-                c[f:f + l] = max(0, v) / w * h[:l]
+                c[P[t].t:P[t].t + P[t].l] = fmax(0, P[t].v) / P[t].w * h[:P[t].l]
             # calc RSS
-            RSS -= res[P[i][2]:f + l].dot(res[P[i][2]:f + l])
-            res[P[i][2]:f + l] = c[P[i][2]:f + l] - y[P[i][2]:f + l]
-            RSS += res[P[i][2]:f + l].dot(res[P[i][2]:f + l])
+            RSS -= res[j:j + k].dot(res[j:j + k])
+            res[P[i].t:j + k] = c[P[i].t:j + k] - y[P[i].t:j + k]
+            RSS += res[P[i].t:j + k].dot(res[P[i].t:j + k])
             if RSS < thresh:
                 break
+    # construct s
+    s = c.copy()
+    s[0] = 0
+    s[1:] -= g * c[:-1]
+    return c, s, b, g, lam
 
-    return c, np.append(0, c[1:] - g * c[:-1]), b, g, lam
 
-
-# TODO: grow set of pools for long time series
+@cython.cdivision(True)
 def oasisAR2(np.ndarray[DOUBLE, ndim=1] y, DOUBLE g1, DOUBLE g2,
              DOUBLE lam=0, DOUBLE s_min=0, int T_over_ISI=1, bool jitter=False):
     """ Infer the most likely discretized spike train underlying an AR(2) fluorescence trace
@@ -505,136 +526,133 @@ def oasisAR2(np.ndarray[DOUBLE, ndim=1] y, DOUBLE g1, DOUBLE g2,
     """
 
     cdef:
-        Py_ssize_t i, t, j, l, f
-        unsigned int len_P, len_g
-        DOUBLE d, r, v, last, tmp, ltmp, RSSold, RSSnew
+        Py_ssize_t i, j, t, l
+        unsigned int len_g
+        DOUBLE d, r, v, tmp, ltmp, RSSold, RSSnew
         np.ndarray[DOUBLE, ndim = 1] _y, c, g11, g12, g11g11, g11g12, tmparray
+        vector[Pool] P
+        Pool newpool
+
     _y = y - lam * (1 - g1 - g2)
     _y[-2] = y[-2] - lam * (1 - g1)
     _y[-1] = y[-1] - lam
 
-    len_P = y.shape[0]
-    c = np.empty(len_P)
+    T = len(y)
     # [first value, last value, start time, length] of pool
-    P = [[max(0, _y[t]), max(0, _y[t]), t, 1] for t in xrange(len_P)]
+    newpool.v, newpool.w, newpool.t, newpool.l = fmax(0, _y[0]), fmax(0, _y[0]), 0, 1
+    P.push_back(newpool)
     # precompute
-    len_g = len_P / T_over_ISI
+    len_g = T / T_over_ISI
     d = (g1 + sqrt(g1 * g1 + 4 * g2)) / 2
     r = (g1 - sqrt(g1 * g1 + 4 * g2)) / 2
     g11 = (np.exp(log(d) * np.arange(1, len_g + 1)) -
            np.exp(log(r) * np.arange(1, len_g + 1))) / (d - r)
-    g12 = np.append(0, g2 * g11[:-1])
+    g12 = np.zeros(len_g)
+    g12[1:] = g2 * g11[:-1]
     g11g11 = np.cumsum(g11 * g11)
     g11g12 = np.cumsum(g11 * g12)
 
-    i = 0
-    while i < len_P - 1:
-        while (i < len_P - 1 and  # predict
-               (((g11[P[i][3]] * P[i][0] + g12[P[i][3]] * P[i - 1][1])
-                 <= P[i + 1][0] - s_min) if i > 0 else
-                (P[i][1] * d <= P[i + 1][0] - s_min))):
-            i += 1
-        if i == len_P - 1:
-            break
-        # merge
-        P[i][3] += P[i + 1][3]
-        l = P[i][3] - 1
-        if i > 0:
-            P[i][0] = (g11[:l + 1].dot(_y[P[i][2]:P[i][2] + P[i][3]])
-                       - g11g12[l] * P[i - 1][1]) / g11g11[l]
-            P[i][1] = (g11[l] * P[i][0] + g12[l] * P[i - 1][1])
-        else:  # update first pool too instead of taking it granted as true
-            P[i][0] = max(0, np.exp(log(d) * np.arange(l + 1)).dot(
-                _y[:P[i][3]]) * (1 - d * d) / (1 - d**(2 * (l + 1))))
-            P[i][1] = d**l * P[i][0]
-        P.pop(i + 1)
-        len_P -= 1
-
+    i = 0  # index of last pool
+    t = 1  # number of time points added = index of next data point
+    while t < T:
+        # add next data point as pool
+        newpool.v, newpool.w, newpool.t, newpool.l = _y[t], _y[t], t, 1
+        P.push_back(newpool)
+        t += 1
+        i += 1
         while (i > 0 and  # backtrack until violations fixed
-               (((g11[P[i - 1][3]] * P[i - 1][0] + g12[P[i - 1][3]] * P[i - 2][1])
-                 > P[i][0] - s_min) if i > 1 else (P[i - 1][1] * d > P[i][0] - s_min))):
+               (((g11[P[i - 1].l] * P[i - 1].v + g12[P[i - 1].l] * P[i - 2].w)
+                 > P[i].v - s_min) if i > 1 else (P[i - 1].w * d > P[i].v - s_min))):
             i -= 1
             # merge
-            P[i][3] += P[i + 1][3]
-            l = P[i][3] - 1
+            P[i].l += P[i + 1].l
+            l = P[i].l - 1
             if i > 0:
-                P[i][0] = (g11[:l + 1].dot(_y[P[i][2]:P[i][2] + P[i][3]])
-                           - g11g12[l] * P[i - 1][1]) / g11g11[l]
-                P[i][1] = (g11[l] * P[i][0] + g12[l] * P[i - 1][1])
+                P[i].v = (g11[:l + 1].dot(_y[P[i].t:P[i].t + P[i].l])
+                          - g11g12[l] * P[i - 1].w) / g11g11[l]
+                P[i].w = (g11[l] * P[i].v + g12[l] * P[i - 1].w)
             else:  # update first pool too instead of taking it granted as true
-                P[i][0] = max(0, np.exp(log(d) * np.arange(l + 1)).dot(
-                    _y[:P[i][3]]) * (1 - d * d) / (1 - d**(2 * (l + 1))))
-                P[i][1] = d**l * P[i][0]
-            P.pop(i + 1)
-            len_P -= 1
+                P[i].v = fmax(0, np.exp(log(d) * np.arange(l + 1)).
+                              dot(_y[:P[i].l]) * (1 - d * d) / (1 - d**(2 * (l + 1))))
+                P[i].w = d**l * P[i].v
+            P.pop_back()
 
     # jitter
-    P = P
     if jitter:
-        for i in xrange(0, len(P) - 1):
+        for i in range(P.size() - 1):
             RSSold = np.inf
             for t in [-2, -1, 0]:
-                if P[i][3] + t > 0 and P[i + 1][3] - t > 0\
-                        and P[i + 1][2] + P[i + 1][3] - t <= len(_y):
-                    l = P[i][3] + t
+                if P[i].l + t > 0 and P[i + 1].l - t > 0\
+                        and P[i + 1].t + P[i + 1].l - t <= len(_y):
+                    l = P[i].l + t
                     if i == 0:
-                        tmp = max(0, np.exp(log(d) * np.arange(l)).dot(_y[:l])
-                                  * (1 - d * d) / (1 - d**(2 * l)))  # first value of pool prev to jittered spike
+                        tmp = fmax(0, np.exp(log(d) * np.arange(l)).dot(_y[:l])
+                                   * (1 - d * d) / (1 - d**(2 * l)))  # first value of pool prev to jittered spike
                         # new values of pool prev to jittered spike
                         tmparray = tmp * np.exp(log(d) * np.arange(l))
                     else:
-                        tmp = (g11[:l].dot(_y[P[i][2]:P[i][2] + l])
-                               - g11g12[l - 1] * P[i - 1][1]) / g11g11[l - 1]  # first value of pool prev to jittered spike
+                        tmp = (g11[:l].dot(_y[P[i].t:P[i].t + l])
+                               - g11g12[l - 1] * P[i - 1].w) / g11g11[l - 1]  # first value of pool prev to jittered spike
                         # new values of pool prev to jittered spike
-                        tmparray = tmp * g11[:l] + P[i - 1][1] * g12[:l]
+                        tmparray = tmp * g11[:l] + P[i - 1].w * g12[:l]
                     ltmp = tmparray[-1]  # last value of pool prev to jittered spike
                     if i > 0:
-                        ltmp2 = tmparray[-2] if l > 1 else P[i - 1][1]
-                    tmparray -= _y[P[i][2]:P[i][2] + l]
+                        ltmp2 = tmparray[-2] if l > 1 else P[i - 1].w
+                    tmparray -= _y[P[i].t:P[i].t + l]
                     RSSnew = tmparray.dot(tmparray)
 
-                    l = P[i + 1][3] - t
-                    tmp = (g11[:l].dot(_y[P[i + 1][2] + t:P[i + 1][2] + P[i + 1][3]])
+                    l = P[i + 1].l - t
+                    tmp = (g11[:l].dot(_y[P[i + 1].t + t:P[i + 1].t + P[i + 1].l])
                            - g11g12[l - 1] * ltmp) / g11g11[l - 1]
                     if t != 0 and ((i > 0 and tmp < g1 * ltmp + g2 * ltmp2) or
                                    (i == 0 and tmp < d * ltmp)):
                         continue  # don't allow negative spike
                     # new values of pool after jittered spike
                     tmparray = tmp * g11[:l] + ltmp * g12[:l]
-                    tmparray -= _y[P[i + 1][2] + t:P[i + 1][2] + P[i + 1][3]]
+                    tmparray -= _y[P[i + 1].t + t:P[i + 1].t + P[i + 1].l]
                     RSSnew += tmparray.dot(tmparray)
 
                     if RSSnew < RSSold:
                         RSSold = RSSnew
                         j = t
 
-            P[i][3] += j
-            l = P[i][3] - 1
+            P[i].l += j
+            l = P[i].l - 1
             if i == 0:
-                P[i][0] = max(0, np.exp(log(d) * np.arange(P[i][3])).dot(_y[:P[i][3]])
-                              * (1 - d * d) / (1 - d**(2 * P[i][3])))  # first value of pool prev to jittered spike
-                P[i][1] = P[i][0] * d**l  # last value of prev pool
+                P[i].v = max(0, np.exp(log(d) * np.arange(P[i].l)).dot(_y[:P[i].l])
+                             * (1 - d * d) / (1 - d**(2 * P[i].l)))  # first value of pool prev to jittered spike
+                P[i].w = P[i].v * d**l  # last value of prev pool
             else:
-                P[i][0] = (g11[:l + 1].dot(_y[P[i][2]:P[i][2] + P[i][3]])
-                           - g11g12[l] * P[i - 1][1]) / g11g11[l]  # first value of pool prev to jittered spike
-                P[i][1] = P[i][0] * g11[l] + P[i - 1][1] * g12[l]  # last value of prev pool
+                P[i].v = (g11[:l + 1].dot(_y[P[i].t:P[i].t + P[i].l])
+                          - g11g12[l] * P[i - 1].w) / g11g11[l]  # first value of pool prev to jittered spike
+                P[i].w = P[i].v * g11[l] + P[i - 1].w * g12[l]  # last value of prev pool
 
-            P[i + 1][2] += j
-            P[i + 1][3] -= j
-            l = P[i + 1][3] - 1
-            P[i + 1][0] = (g11[:l + 1].dot(_y[P[i + 1][2]:P[i + 1][2] + P[i + 1][3]])
-                           - g11g12[l] * P[i][1]) / g11g11[l]  # first value of pool after jittered spike
-            P[i + 1][1] = P[i + 1][0] * g11[l] + P[i][1] * g12[l]  # last
+            P[i + 1].t += j
+            P[i + 1].l -= j
+            l = P[i + 1].l - 1
+            P[i + 1].v = (g11[:l + 1].dot(_y[P[i + 1].t:P[i + 1].t + P[i + 1].l])
+                          - g11g12[l] * P[i].w) / g11g11[l]  # first value of pool after jittered spike
+            P[i + 1].w = P[i + 1].v * g11[l] + P[i].w * g12[l]  # last
 
     # construct c
-    (v, last, f, l) = P[0]
-    c[:l] = v * d**np.arange(l)
-    for i, (v, last, f, l) in enumerate(P[1:]):
-        c[f:f + l] = g11[:l] * v + g12[:l] * P[i][1]
-    return c, np.append([0, 0], c[2:] - g1 * c[1:-1] - g2 * c[:-2])
+    c = np.empty(T)
+    tmp = fmax(P[0].v, 0)
+    for j in range(P[0].l):
+        c[j] = tmp
+        tmp *= d
+    for i in range(1, P.size()):
+        c[P[i].t] = P[i].v
+        for j in range(P[i].t + 1, P[i].t + P[i].l - 1):
+            c[j] = g1 * c[j - 1] + g2 * c[j - 2]
+        c[P[i].t + P[i].l - 1] = P[i].w
+    # construct s
+    s = c.copy()
+    s[:2] = 0
+    s[2:] -= (g1 * c[1:-1] + g2 * c[:-2])
+    return c, s
 
 
-# TODO: optimize risetime, warm starts, optimize g without optimizing b
+# TODO: optimize risetime, warm starts
 # N.B.: lam denotes the shift due to the sparsity penalty, i.e. is already multiplied by (1-g1-g2)
 def constrained_oasisAR2(np.ndarray[DOUBLE, ndim=1] y, DOUBLE g1, DOUBLE g2, DOUBLE sn,
                          bool optimize_b=False, bool b_nonneg=True, int optimize_g=0,
@@ -691,129 +709,128 @@ def constrained_oasisAR2(np.ndarray[DOUBLE, ndim=1] y, DOUBLE g1, DOUBLE g2, DOU
     """
 
     cdef:
-        Py_ssize_t i, t, l, f
-        unsigned int len_P, len_g, count
+        Py_ssize_t i, j, t, l, f
+        unsigned int len_g, count
         DOUBLE thresh, d, r, v, last, lam, dlam, RSS, aa, bb, cc, ll, b
-        np.ndarray[DOUBLE, ndim = 1] solution, res0, res, g11, g12, g11g11, g11g12, tmp, spikesizes, s
+        np.ndarray[DOUBLE, ndim = 1] c, res0, res, spikesizes, s
+        np.ndarray[DOUBLE, ndim = 1] g11, g12, g11g11, g11g12, Sg11, tmp
+        vector[Pool] P
+        Pool newpool
 
-    len_P = len(y)
-    thresh = sn * sn * len_P
-    c = np.empty(len_P)
-    # [value, weight, start time, length] of pool
-    P = [[y[t], y[t], t, 1] for t in xrange(len_P)]
+    T = len(y)
+    thresh = sn * sn * T
+    c = np.empty(T)
+    for t in range(T):
+        # [value, weight, start time, length] of pool
+        newpool.v, newpool.w, newpool.t, newpool.l = y[t], y[t], t, 1
+        P.push_back(newpool)
     # precompute
-    len_g = len_P / T_over_ISI
+    len_g = T / T_over_ISI
     d = (g1 + sqrt(g1 * g1 + 4 * g2)) / 2
     r = (g1 - sqrt(g1 * g1 + 4 * g2)) / 2
     g11 = (np.exp(log(d) * np.arange(1, len_g + 1)) -
            np.exp(log(r) * np.arange(1, len_g + 1))) / (d - r)
-    g12 = np.append(0, g2 * g11[:-1])
+    g12 = np.zeros(len_g)
+    g12[1:] = g2 * g11[:-1]
     g11g11 = np.cumsum(g11 * g11)
     g11g12 = np.cumsum(g11 * g12)
     Sg11 = np.cumsum(g11)
 
-    def oasis(y, P, c, g11, g12, g11g11, g11g12):
-        len_P = len(P)
-        i = 0
-        while i < len_P - 1:
-            while (i < len_P - 1 and  # predict
-                   (((g11[P[i][3]] * P[i][0] + g12[P[i][3]] * P[i - 1][1])
-                     <= P[i + 1][0]) if i > 0 else (P[i][1] * d <= P[i + 1][0]))):
-                i += 1
-            if i == len_P - 1:
-                break
-            # merge
-            P[i][3] += P[i + 1][3]
-            l = P[i][3] - 1
-            if i > 0:
-                P[i][0] = (g11[:l + 1].dot(y[P[i][2]:P[i][2] + P[i][3]])
-                           - g11g12[l] * P[i - 1][1]) / g11g11[l]
-                P[i][1] = (g11[l] * P[i][0] + g12[l] * P[i - 1][1])
-            else:  # update first pool too instead of taking it granted as true
-                P[i][0] = max(0, np.exp(log(d) * np.arange(l + 1)).dot(
-                    y[:P[i][3]]) * (1 - d * d) / (1 - d**(2 * (l + 1))))
-                P[i][1] = d**l * P[i][0]
-            P.pop(i + 1)
-            len_P -= 1
+    def oasis(np.ndarray[DOUBLE, ndim=1] y, vector[Pool] P, np.ndarray[DOUBLE, ndim=1] c,
+              np.ndarray[DOUBLE, ndim=1] g11, np.ndarray[DOUBLE, ndim=1] g12,
+              np.ndarray[DOUBLE, ndim=1] g11g11, np.ndarray[DOUBLE, ndim=1] g11g12):
 
+        cdef:
+            Py_ssize_t i, j, l
+            DOUBLE tmp
+
+        i = 0
+        while i < P.size() - 1:
+            i += 1
             while (i > 0 and  # backtrack until violations fixed
-                   (((g11[P[i - 1][3]] * P[i - 1][0] + g12[P[i - 1][3]] * P[i - 2][1])
-                     > P[i][0]) if i > 1 else (P[i - 1][1] * d > P[i][0]))):
+                   (((g11[P[i - 1].l] * P[i - 1].v + g12[P[i - 1].l] * P[i - 2].w) >
+                     P[i].v) if i > 1 else (P[i - 1].w * d > P[i].v))):
                 i -= 1
                 # merge
-                P[i][3] += P[i + 1][3]
-                l = P[i][3] - 1
+                P[i].l += P[i + 1].l
+                l = P[i].l - 1
                 if i > 0:
-                    P[i][0] = (g11[:l + 1].dot(y[P[i][2]:P[i][2] + P[i][3]])
-                               - g11g12[l] * P[i - 1][1]) / g11g11[l]
-                    P[i][1] = (g11[l] * P[i][0] + g12[l] * P[i - 1][1])
+                    P[i].v = (g11[:l + 1].dot(y[P[i].t:P[i].t + P[i].l]) -
+                              g11g12[l] * P[i - 1].w) / g11g11[l]
+                    P[i].w = (g11[l] * P[i].v + g12[l] * P[i - 1].w)
                 else:  # update first pool too instead of taking it granted as true
-                    P[i][0] = max(0, np.exp(log(d) * np.arange(l + 1)).dot(y[:P[i][3]]) *
-                                  (1 - d * d) / (1 - d**(2 * (l + 1))))
-                    P[i][1] = d**l * P[i][0]
-                P.pop(i + 1)
-                len_P -= 1
-
+                    P[i].v = fmax(0, np.exp(log(d) * np.arange(l + 1)).
+                                  dot(y[:P[i].l]) * (1 - d * d) / (1 - d**(2 * (l + 1))))
+                    P[i].w = d**l * P[i].v
+                P.erase(P.begin() + i + 1)
         # construct c
-        (v, _, _, l) = P[0]
-        c[:l] = v * d**np.arange(l)
-        for i, (v, last, f, l) in enumerate(P[1:]):
-            c[f:f + l] = g11[:l] * v + g12[:l] * P[i][1]
+        c = np.empty(T)
+        tmp = P[0].v  # fmax(P[0].v, 0)
+        for j in range(P[0].l):
+            c[j] = tmp
+            tmp *= d
+        for i in range(1, P.size()):
+            # c[P[i].t:P[i].t + P[i].l] = g11[:P[i].l] * P[i].v + g12[:P[i].l] * P[i-1].w
+            c[P[i].t] = P[i].v
+            for j in range(1, P[i].l - 1):
+                c[P[i].t + j] = g1 * c[P[i].t + j - 1] + g2 * c[P[i].t + j - 2]
+            c[P[i].t + P[i].l - 1] = P[i].w
         return c, P
 
     if not optimize_b:  # don't optimize b nor g, just the dual variable lambda
-        b = count = 0
+        b, count = 0, 0
         c, P = oasis(y, P, c, g11, g12, g11g11, g11g12)
-        tmp = np.ones(len(c))
+        tmp = np.ones(T)
         lam = 0
         res = y - c
         RSS = (res).dot(res)
         # until noise constraint is tight or spike train is empty
-        while (RSS < thresh * (1 - 1e-4) and sum(c) > 1e-9) and count < max_iter:
+        while (RSS < thresh * (1 - 1e-4) and c.sum() > 1e-9) and count < max_iter:
             count += 1
             # update lam
-            l = P[0][3]
-            tmp[:l] = (1 + d) / (1 + d**l) * np.exp(log(d) * np.arange(l))  # first pool
-            for i, a in enumerate(P[1:]):
+            aa = (1 + d) / (1 + d**P[0].l)  # first pool
+            for j in range(P[0].l):
+                tmp[j] = aa
+                aa *= d
+            for i in range(1, P.size()):  # all other pools
                 # if and elif correct last 2 time points for |s|_1 instead |c|_1
-                l = a[3] - 1
-                if i == len(P) - 2:  # last pool
-                    tmp[a[2]] = (1. / (1 - g1 - g2) if l == 0 else
-                                 (Sg11[l] + g2 / (1 - g1 - g2) * g11[a[3] - 2] +
-                                  (g1 + g2) / (1 - g1 - g2) * g11[a[3] - 1]
-                                     - g11g12[l] * tmp[a[2] - 1]) / g11g11[l])
+                l = P[i].l - 1
+                if i == P.size() - 1:  # last pool
+                    tmp[P[i].t] = (1. / (1 - g1 - g2) if l == 0 else
+                                   (Sg11[l] + g2 / (1 - g1 - g2) * g11[P[i].l - 2] +
+                                    (g1 + g2) / (1 - g1 - g2) * g11[P[i].l - 1]
+                                    - g11g12[l] * tmp[P[i].t - 1]) / g11g11[l])
                 # secondlast pool if last one has length 1
-                elif i == len(P) - 3 and P[-1][-1] == 1:
-                    tmp[a[2]] = (Sg11[l] + g2 / (1 - g1 - g2) * g11[a[3] - 1]
-                                 - g11g12[l] * tmp[a[2] - 1]) / g11g11[l]
+                elif i == P.size() - 2 and P[i + 1].l == 1:
+                    tmp[P[i].t] = (Sg11[l] + g2 / (1 - g1 - g2) * g11[P[i].l - 1] -
+                                   g11g12[l] * tmp[P[i].t - 1]) / g11g11[l]
                 else:  # all other pools
-                    tmp[a[2]] = (Sg11[l] - g11g12[l] * tmp[a[2] - 1]) / g11g11[l]
-                tmp[a[2] + 1:a[2] + a[3]] = g11[1:a[3]] * tmp[a[2]] + g12[1:a[3]] * tmp[a[2] - 1]
+                    tmp[P[i].t] = (Sg11[l] - g11g12[l] * tmp[P[i].t - 1]) / g11g11[l]
+                for j in range(P[i].t + 1, P[i].t + P[i].l):
+                    tmp[j] = g1 * tmp[j - 1] + g2 * tmp[j - 2]
             aa = tmp.dot(tmp)
             bb = res.dot(tmp)
             cc = RSS - thresh
             dlam = (-bb + sqrt(bb * bb - aa * cc)) / aa
             lam += dlam
             # perform shift by dlam
-            for i, a in enumerate(P):
-                if i == 0:  # first pool
-                    a[0] = max(0, a[0] - dlam * tmp[0])
-                    ll = -a[1]
-                    a[1] = a[0] * d**a[3]
-                    ll += a[1]
-                else:  # all other pools
-                    l = a[3] - 1
-                    a[0] -= (dlam * Sg11[l] + g11g12[l] * ll) / g11g11[l]
-                    # correct last 2 time points for |s|_1 instead |c|_1
-                    if i == len(P) - 1:  # last pool
-                        a[0] -= dlam * (g2 / (1 - g1 - g2) * g11[l - 1] +
-                                        (g1 + g2) / (1 - g1 - g2) * g11[l])
-                    # secondlast pool if last one has length 1
-                    if i == len(P) - 2 and P[-1][-1] == 1:
-                        a[0] -= dlam * g2 / (1 - g1 - g2) * g11[l]
-                    ll = -a[1]
-                    a[1] = g11[l] * a[0] + g12[l] * P[i - 1][1]
-                    ll += a[1]
+            P[0].v = fmax(0, P[0].v - dlam * tmp[0])  # first pool
+            ll = -P[0].w
+            P[0].w = P[0].v * d**P[0].l
+            ll += P[0].w
+            for i in range(1, P.size()):  # all other pools
+                l = P[i].l - 1
+                P[i].v -= (dlam * Sg11[l] + g11g12[l] * ll) / g11g11[l]
+                # correct last 2 time points for |s|_1 instead |c|_1
+                if i == P.size() - 1:  # last pool
+                    P[i].v -= dlam * (g2 / (1 - g1 - g2) * g11[l - 1] +
+                                      (g1 + g2) / (1 - g1 - g2) * g11[l])
+                # 2ndlast pool if last one has length 1
+                if i == P.size() - 2 and P[i + 1].l == 1:
+                    P[i].v -= dlam * g2 / (1 - g1 - g2) * g11[l]
+                ll = -P[i].w
+                P[i].w = g11[l] * P[i].v + g12[l] * P[i - 1].w
+                ll += P[i].w
 
             tmp = y - lam
             # correct last 2 elements for |s|_1 instead |c|_1
@@ -837,7 +854,8 @@ def constrained_oasisAR2(np.ndarray[DOUBLE, ndim=1] y, DOUBLE g1, DOUBLE g2, DOU
                 g2 = -d * r
                 g11 = (np.exp(log(d) * np.arange(1, len_g + 1)) -
                        np.exp(log(r) * np.arange(1, len_g + 1))) / (d - r)
-                g12 = np.append(0, g2 * g11[:-1])
+                g12 = np.zeros(len_g, dtype=np.float32)
+                g12[1:] = g2 * g11[:-1]
                 g11g11 = np.cumsum(g11 * g11)
                 g11g12 = np.cumsum(g11 * g12)
                 Sg11 = np.cumsum(g11)
@@ -845,20 +863,20 @@ def constrained_oasisAR2(np.ndarray[DOUBLE, ndim=1] y, DOUBLE g1, DOUBLE g2, DOU
         else:
             b = np.percentile(y, 15)
             if b_nonneg:
-                b = max(b, 0)
-            lam = 2 * sn * np.linalg.norm(g11) * (1 - g1 - g2)
+                b = fmax(b, 0)
+            lam = 2 * sn * sqrt(g11.dot(g11)) * (1 - g1 - g2)
         # run oasisAR2  TODO: add warm start
     #     ff = np.hstack([a * decimate + np.arange(-decimate, decimate)
     #                 for a in np.where(tmp>1e-6)[0]])  # this window size seems necessary and sufficient
     #     ff = np.unique(ff[(ff >= 0) * (ff < T)])
         c, tmp = oasisAR2(y - b, g1, g2, lam=lam / (1 - g1 - g2))
-        db = max(np.mean(y - c), 0 if b_nonneg else -np.inf) - b
+        db = fmax(np.mean(y - c), 0 if b_nonneg else -np.inf) - b
         b += db
         lam -= db
         for i in range(max_iter - 1):
             res = y - c - b
             RSS = res.dot(res)
-            if abs(RSS - thresh) < 1e-3 * thresh:
+            if fabs(RSS - thresh) < 1e-3 * thresh:
                 break
             # calc shift db, here attributed to baseline
             ls = np.append(np.where(tmp > 1e-6)[0], len(y))
@@ -878,27 +896,31 @@ def constrained_oasisAR2(np.ndarray[DOUBLE, ndim=1] y, DOUBLE g1, DOUBLE g2, DOU
             except:
                 db = -bb / aa
             if b_nonneg:
-                db = max(db, -b)
+                db = fmax(db, -b)
             # perform shift
             b += db
             c, tmp = oasisAR2(y - b, g1, g2, lam=lam / (1 - g1 - g2))
-            db = max(np.mean(y - c), 0 if b_nonneg else -np.inf) - b
+            db = fmax(np.mean(y - c), 0 if b_nonneg else -np.inf) - b
             b += db
             lam -= db
 
     if penalty == 0:  # get (locally optimal) L0 solution
 
         def c4smin(y, s, s_min, g11, g12, g11g11, g11g12):
+            cdef:
+                Py_ssize_t i, t, l
+                np.ndarray[long, ndim = 1] ls
+                np.ndarray[DOUBLE, ndim = 1] tmp
             ls = np.append(np.where(s > s_min)[0], len(y))
             tmp = np.zeros_like(s)
             l = ls[0]  # first pool
             tmp[:l] = max(0, np.exp(log(d) * np.arange(l)).dot(y[:l]) * (1 - d * d)
                           / (1 - d**(2 * l))) * np.exp(log(d) * np.arange(l))
-            for i, f in enumerate(ls[:-1]):  # all other pools
-                l = ls[i + 1] - f
-                tmp[f] = (g11[:l].dot(y[f:f + l])
-                          - g11g12[l - 1] * tmp[f - 1]) / g11g11[l - 1]
-                tmp[f + 1:f + l] = g11[1:l] * tmp[f] + g12[1:l] * tmp[f - 1]
+            for i, t in enumerate(ls[:-1]):  # all other pools
+                l = ls[i + 1] - t
+                tmp[t] = (g11[:l].dot(y[t:t + l])
+                          - g11g12[l - 1] * tmp[t - 1]) / g11g11[l - 1]
+                tmp[t + 1:t + l] = g11[1:l] * tmp[t] + g12[1:l] * tmp[t - 1]
             return tmp
         s = np.append([0, 0], c[2:] - g1 * c[1:-1] - g2 * c[:-2])
         spikesizes = np.sort(s[s > 1e-8])
@@ -918,6 +940,490 @@ def constrained_oasisAR2(np.ndarray[DOUBLE, ndim=1] y, DOUBLE g1, DOUBLE g2, DOU
                 t = (f + i) / 2
         if t > 0:
             c = res0
+    # construct s
+    s = c.copy()
+    s[:2] = 0
+    s[2:] -= (g1 * c[1:-1] + g2 * c[:-2])
+    return c, s, b, (g1, g2), lam / (1 - g1 - g2)
 
-    return (c, np.append([0, 0], c[2:] - g1 * c[1:-1] - g2 * c[:-2]),
-            b, (g1, g2), lam / (1 - g1 - g2))
+#
+
+#
+
+# same stuff for AR1 again, but using single precision (float32)
+# this is a bit faster for AR1, but somehow not for AR2, hence skipped that
+
+
+ctypedef np.float32_t SINGLE
+
+cdef struct Pool32:
+    SINGLE v
+    SINGLE w
+    Py_ssize_t t
+    Py_ssize_t l
+
+
+@cython.cdivision(True)
+def oasisAR1_f32(np.ndarray[SINGLE, ndim=1] y, SINGLE g, SINGLE lam=0, SINGLE s_min=0):
+    """ Infer the most likely discretized spike train underlying an AR(1) fluorescence trace
+
+    Solves the sparse non-negative deconvolution problem
+    min 1/2|c-y|^2 + lam |s|_1 subject to s_t = c_t-g c_{t-1} >=s_min or =0
+
+    Parameters
+    ----------
+    y : array of float
+        One dimensional array containing the fluorescence intensities with
+        one entry per time-bin.
+    g : float
+        Parameter of the AR(1) process that models the fluorescence impulse response.
+    lam : float, optional, default 0
+        Sparsity penalty parameter lambda.
+    s_min : float, optional, default 0
+        Minimal non-zero activity within each bin (minimal 'spike size').
+
+    Returns
+    -------
+    c : array of float
+        The inferred denoised fluorescence signal at each time-bin.
+    s : array of float
+        Discretized deconvolved neural activity (spikes)
+
+    References
+    ----------
+    * Friedrich J and Paninski L, NIPS 2016
+    * Friedrich J, Zhou P, and Paninski L, PLOS Computational Biology 2017
+    """
+
+    cdef:
+        Py_ssize_t i, j, k, t, T
+        SINGLE tmp
+        np.ndarray[SINGLE, ndim = 1] c, s
+        vector[Pool32] P
+        Pool32 newpool
+
+    T = len(y)
+    # [value, weight, start time, length] of pool
+    newpool.v, newpool.w, newpool.t, newpool.l = y[0] - lam * (1 - g), 1, 0, 1
+    P.push_back(newpool)
+    i = 0  # index of last pool
+    t = 1  # number of time points added = index of next data point
+    while t < T:
+        # add next data point as pool
+        newpool.v = y[t] - lam * (1 if t == T - 1 else (1 - g))
+        newpool.w, newpool.t, newpool.l = 1, t, 1
+        P.push_back(newpool)
+        t += 1
+        i += 1
+        while (i > 0 and  # backtrack until violations fixed
+               (P[i - 1].v / P[i - 1].w * g**P[i - 1].l + s_min > P[i].v / P[i].w)):
+            i -= 1
+            # merge two pools
+            P[i].v += P[i + 1].v * g**P[i].l
+            P[i].w += P[i + 1].w * g**(2 * P[i].l)
+            P[i].l += P[i + 1].l
+            P.pop_back()
+    # construct c
+    c = np.empty(T, dtype=np.float32)
+    for j in range(i + 1):
+        tmp = fmax(P[j].v, 0) / P[j].w
+        for k in range(P[j].l):
+            c[k + P[j].t] = tmp
+            tmp *= g
+    # construct s
+    s = c.copy()
+    s[0] = 0
+    s[1:] -= g * c[:-1]
+    return c, s
+
+
+@cython.cdivision(True)
+def constrained_oasisAR1_f32(np.ndarray[SINGLE, ndim=1] y, SINGLE g, SINGLE sn,
+                             bool optimize_b=False, bool b_nonneg=True, int optimize_g=0,
+                             int decimate=1, int max_iter=5, int penalty=1):
+    """ Infer the most likely discretized spike train underlying an AR(1) fluorescence trace
+
+    Solves the noise constrained sparse non-negative deconvolution problem
+    min |s|_1 subject to |c-y|^2 = sn^2 T and s_t = c_t-g c_{t-1} >= 0
+
+    Parameters
+    ----------
+    y : array of float
+        One dimensional array containing the fluorescence intensities (with baseline
+        already subtracted, if known, see optimize_b) with one entry per time-bin.
+    g : float
+        Parameter of the AR(1) process that models the fluorescence impulse response.
+    sn : float
+        Standard deviation of the noise distribution.
+    optimize_b : bool, optional, default False
+        Optimize baseline if True else it is set to 0, see y.
+    b_nonneg: bool, optional, default True
+        Enforce strictly non-negative baseline if True.
+    optimize_g : int, optional, default 0
+        Number of large, isolated events to consider for optimizing g.
+        No optimization if optimize_g=0.
+    decimate : int, optional, default 1
+        Decimation factor for estimating hyper-parameters faster on decimated data.
+    max_iter : int, optional, default 5
+        Maximal number of iterations.
+    penalty : int, optional, default 1
+        Sparsity penalty. 1: min |s|_1  0: min |s|_0
+
+    Returns
+    -------
+    c : array of float
+        The inferred denoised fluorescence signal at each time-bin.
+    s : array of float
+        Discretized deconvolved neural activity (spikes).
+    b : float
+        Fluorescence baseline value.
+    g : float
+        Parameter of the AR(1) process that models the fluorescence impulse response.
+    lam : float
+        Sparsity penalty parameter lambda of dual problem.
+
+    References
+    ----------
+    * Friedrich J and Paninski L, NIPS 2016
+    * Friedrich J, Zhou P, and Paninski L, PLOS Computational Biology 2017
+    """
+
+    cdef:
+        Py_ssize_t i, j, k, t, l
+        unsigned int ma, count, T
+        SINGLE thresh, v, w, RSS, aa, bb, cc, lam, dlam, b, db, dphi
+        bool g_converged
+        np.ndarray[SINGLE, ndim = 1] c, s, res, tmp, fluor, h
+        np.ndarray[long, ndim = 1] ff, ll
+        vector[Pool32] P
+        Pool32 newpool
+
+    T = len(y)
+    thresh = sn * sn * T
+    if decimate > 1:  # parameter changes due to downsampling
+        fluor = y.copy()
+        y = y.reshape(-1, decimate).mean(1)
+        g = g**decimate
+        thresh = thresh / decimate / decimate
+        T = len(y)
+    # explicit kernel, useful for constructing solution
+    h = np.exp(log(g) * np.arange(T, dtype=np.float32))
+    c = np.empty(T, dtype=np.float32)
+    # [value, weight, start time, length] of pool
+    lam = 0  # sn/sqrt(1-g*g)
+
+    def oasis1strun(np.ndarray[SINGLE, ndim=1] y, SINGLE g, np.ndarray[SINGLE, ndim=1] c):
+
+        cdef:
+            Py_ssize_t i, j, k, t, T
+            SINGLE tmp
+            vector[Pool32] P
+            Pool32 newpool
+
+        T = len(y)
+        # [value, weight, start time, length] of pool
+        # newpool.v, newpool.w, newpool.t, newpool.l = y[0] - lam * (1 - g), 1, 0, 1
+        newpool.v, newpool.w, newpool.t, newpool.l = y[0], 1, 0, 1
+        P.push_back(newpool)
+        i = 0  # index of last pool
+        t = 1  # number of time points added = index of next data point
+        while t < T:
+            # add next data point as pool
+            newpool.v = y[t]  # - lam * (1 if t == T - 1 else (1 - g))
+            newpool.w, newpool.t, newpool.l = 1, t, 1
+            P.push_back(newpool)
+            t += 1
+            i += 1
+            while (i > 0 and  # backtrack until violations fixed
+                   (P[i - 1].v / P[i - 1].w * g**P[i - 1].l > P[i].v / P[i].w)):
+                i -= 1
+                # merge two pools
+                P[i].v += P[i + 1].v * g**P[i].l
+                P[i].w += P[i + 1].w * g**(2 * P[i].l)
+                P[i].l += P[i + 1].l
+                P.pop_back()
+        # construct c
+        c = np.empty(T, dtype=np.float32)
+        for j in range(i + 1):
+            tmp = fmax(P[j].v, 0) / P[j].w
+            for k in range(P[j].l):
+                c[k + P[j].t] = tmp
+                tmp *= g
+        return c, P
+
+    def oasis(vector[Pool32] P, SINGLE g, np.ndarray[SINGLE, ndim=1] c):
+
+        cdef:
+            Py_ssize_t i, j, k
+            SINGLE tmp
+
+        i = 0
+        while i < P.size() - 1:
+            i += 1
+            while (i > 0 and  # backtrack until violations fixed
+                   (P[i - 1].v / P[i - 1].w * g**P[i - 1].l > P[i].v / P[i].w)):
+                i -= 1
+                # merge two pools
+                P[i].v += P[i + 1].v * g**P[i].l
+                P[i].w += P[i + 1].w * g**(2 * P[i].l)
+                P[i].l += P[i + 1].l
+                P.erase(P.begin() + i + 1)
+        # construct c
+        c = np.empty(P[P.size() - 1].t + P[P.size() - 1].l, dtype=np.float32)
+        for j in range(i + 1):
+            tmp = fmax(P[j].v, 0) / P[j].w
+            for k in range(P[j].l):
+                c[k + P[j].t] = tmp
+                tmp *= g
+        return c, P
+
+    g_converged = False
+    count = 0
+    if not optimize_b:  # don't optimize b, just the dual variable lambda and g if optimize_g>0
+        c, P = oasis1strun(y, g, c)
+        tmp = np.empty(T, dtype=np.float32)
+        res = y - c
+        RSS = (res).dot(res)
+        b = 0
+        # until noise constraint is tight or spike train is empty
+        while RSS < thresh * (1 - 1e-4) and c.sum() > 1e-9:
+            # update lam
+            for i in range(P.size()):
+                if i == P.size() - 1:  # for |s|_1 instead |c|_1 sparsity
+                    # faster than tmp[P[i].t:P[i].t + P[i].l] = 1 / P[i].w * h[:P[i].l]
+                    aa = 1 / P[i].w
+                    for j in range(P[i].l):
+                        tmp[P[i].t + j] = aa
+                        aa *= g
+                else:
+                    aa = (1 - g**P[i].l) / P[i].w
+                    for j in range(P[i].l):
+                        tmp[P[i].t + j] = aa
+                        aa *= g
+            aa = tmp.dot(tmp)
+            bb = res.dot(tmp)
+            cc = RSS - thresh
+            dlam = (-bb + sqrt(bb * bb - aa * cc)) / aa
+            lam += dlam
+            for i in range(P.size() - 1):  # perform shift
+                P[i].v -= dlam * (1 - g**P[i].l)
+            P[P.size() - 1].v -= dlam  # correct last pool; |s|_1 instead |c|_1
+            c, P = oasis(P, g, c)
+
+            # update g
+            if optimize_g and count < max_iter - 1 and (not g_converged):
+                ma = max([P[i].l for i in range(P.size())])
+                idx = np.argsort([P[i].v for i in range(P.size())])
+                Pt = [P[i].t for i in idx[-optimize_g:]]
+                Pl = [P[i].l for i in idx[-optimize_g:]]
+
+                def bar(y, g, Pt, Pl):
+                    h = np.exp(log(g) * np.arange(ma, dtype=np.float32))
+
+                    def foo(y, t, l, q, g, lam=lam):
+                        yy = y[t:t + l]
+                        if t + l == T:  # |s|_1 instead |c|_1
+                            tmp = ((q.dot(yy) - lam) * (1 - g * g) /
+                                   (1 - g**(2 * l))) * q - yy
+                        else:
+                            tmp = ((q.dot(yy) - lam * (1 - g**l)) * (1 - g * g) /
+                                   (1 - g**(2 * l))) * q - yy
+                        return tmp.dot(tmp)
+                    return sum([foo(y, Pt[i], Pl[i], h[:Pl[i]], g)
+                                for i in range(optimize_g)])
+
+                def baz(y, Pt, Pl):
+                    # minimizes residual
+                    return fminbound(lambda x: bar(y, x, Pt, Pl), 0, 1, xtol=1e-4, maxfun=50)
+                aa = baz(y, Pt, Pl)
+                if abs(aa - g) < 1e-4:
+                    g_converged = True
+                g = aa
+                # explicit kernel, useful for constructing c
+                h = np.exp(log(g) * np.arange(T, dtype=np.float32))
+                for i in range(P.size()):
+                    q = h[:P[i].l]
+                    P[i].v = q.dot(y[P[i].t:P[i].t + P[i].l]) - lam * (1 - g**P[i].l)
+                    P[i].w = q.dot(q)
+                P[P.size() - 1].v -= lam * g**P[P.size() - 1].l  # |s|_1 instead |c|_1
+                c, P = oasis(P, g, c)
+            # calc RSS
+            res = y - c
+            RSS = res.dot(res)
+
+    else:  # optimize b and dependent on optimize_g g too
+        b = np.percentile(y, 15)  # initial estimate of baseline
+        if b_nonneg:
+            b = fmax(b, 0)
+        c, P = oasis1strun(y - b, g, c)
+        # update b and lam
+        db = fmax(np.mean(y - c), 0 if b_nonneg else -np.inf) - b
+        b += db
+        lam -= db / (1 - g)
+        # correct last pool
+        i = P.size() - 1
+        P[i].v -= lam * g**P[i].l  # |s|_1 instead |c|_1
+        c[P[i].t:P[i].t + P[i].l] = fmax(0, P[i].v) / P[i].w * h[:P[i].l]
+        # calc RSS
+        res = y - b - c
+        RSS = res.dot(res)
+        tmp = np.empty(T, dtype=np.float32)
+        # until noise constraint is tight or spike train is empty or max_iter reached
+        while fabs(RSS - thresh) > thresh * 1e-4 and c.sum() > 1e-9 and count < max_iter:
+            count += 1
+            # update lam and b
+            # calc total shift dphi due to contribution of baseline and lambda
+            for i in range(P.size()):
+                if i == P.size() - 1:  # for |s|_1 instead |c|_1 sparsity
+                    aa = 1 / P[i].w
+                    for j in range(P[i].l):
+                        tmp[P[i].t + j] = aa
+                        aa *= g
+                else:
+                    aa = (1 - g**P[i].l) / P[i].w
+                    for j in range(P[i].l):
+                        tmp[P[i].t + j] = aa
+                        aa *= g
+            tmp -= 1. / T / (1 - g) * np.sum([(1 - g**P[i].l) ** 2 / P[i].w
+                                              for i in range(P.size())])
+            aa = tmp.dot(tmp)
+            bb = res.dot(tmp)
+            cc = RSS - thresh
+            if bb * bb - aa * cc > 0:
+                dphi = (-bb + sqrt(bb * bb - aa * cc)) / aa
+            else:
+                dphi = -bb / aa
+            if b_nonneg:
+                dphi = fmax(dphi, -b / (1 - g))
+            b += dphi * (1 - g)
+            for i in range(P.size()):  # perform shift
+                P[i].v -= dphi * (1 - g**P[i].l)
+            c, P = oasis(P, g, c)
+            # update b and lam
+            db = fmax(np.mean(y - c), 0 if b_nonneg else -np.inf) - b
+            b += db
+            dlam = -db / (1 - g)
+            lam += dlam
+            # correct last pool
+            i = P.size() - 1
+            P[i].v -= dlam * g**P[i].l  # |s|_1 instead |c|_1
+            c[P[i].t:P[i].t + P[i].l] = fmax(0, P[i].v) / P[i].w * h[:P[i].l]
+
+            # update g and b
+            if optimize_g and count < max_iter - 1 and (not g_converged):
+                ma = max([P[i].l for i in range(P.size())])
+                idx = np.argsort([P[i].v for i in range(P.size())])
+                Pt = [P[i].t for i in idx[-optimize_g:]]
+                Pl = [P[i].l for i in idx[-optimize_g:]]
+
+                def bar(y, opt, Pt, Pl):
+                    b, g = opt
+                    h = np.exp(log(g) * np.arange(ma, dtype=np.float32))
+
+                    def foo(y, t, l, q, b, g, lam=lam):
+                        yy = y[t:t + l] - b
+                        if t + l == T:  # |s|_1 instead |c|_1
+                            tmp = ((q.dot(yy) - lam) * (1 - g * g) /
+                                   (1 - g**(2 * l))) * q - yy
+                        else:
+                            tmp = ((q.dot(yy) - lam * (1 - g**l)) * (1 - g * g) /
+                                   (1 - g**(2 * l))) * q - yy
+                        return tmp.dot(tmp)
+                    return sum([foo(y, Pt[i], Pl[i], h[:Pl[i]], b, g)
+                                for i in range(P.size() if P.size() < optimize_g else optimize_g)])
+
+                def baz(y, Pt, Pl):
+                    return minimize(lambda x: bar(y, x, Pt, Pl), (b, g),
+                                    bounds=((0 if b_nonneg else None, None), (.001, .999)),
+                                    method='L-BFGS-B',
+                                    options={'gtol': 1e-04, 'maxiter': 3, 'ftol': 1e-05})
+                result = baz(y, Pt, Pl)
+                if fabs(result['x'][1] - g) < 1e-3:
+                    g_converged = True
+                b, g = result['x']
+                # explicit kernel, useful for constructing c
+                h = np.exp(log(g) * np.arange(T, dtype=np.float32))
+                for i in range(P.size()):
+                    q = h[:P[i].l]
+                    P[i].v = q.dot(y[P[i].t:P[i].t + P[i].l]) - \
+                        (b / (1 - g) + lam) * (1 - g**P[i].l)
+                    P[i].w = q.dot(q)
+                P[P.size() - 1].v -= lam * g**P[P.size() - 1].l  # |s|_1 instead |c|_1
+                c, P = oasis(P, g, c)
+                # update b and lam
+                db = fmax(np.mean(y - c), 0 if b_nonneg else -np.inf) - b
+                b += db
+                dlam = -db / (1 - g)
+                lam += dlam
+                # correct last pool
+                i = P.size() - 1
+                P[i].v -= dlam * g**P[i].l  # |s|_1 instead |c|_1
+                c[P[i].t:P[i].t + P[i].l] = fmax(0, P[i].v) / P[i].w * h[:P[i].l]
+
+            # calc RSS
+            res = y - c - b
+            RSS = res.dot(res)
+
+    if decimate > 1:  # deal with full data
+        y = fluor
+        lam *= (1 - g)
+        g = g**(1. / decimate)
+        lam /= (1 - g)
+        thresh = thresh * decimate * decimate
+        T = len(fluor)
+        # warm-start active set
+        ff = np.ravel([P[i].t * decimate + np.arange(-decimate, 3 * decimate / 2)
+                       for i in range(P.size())])  # this window size seems necessary and sufficient
+        ff = np.unique(ff[(ff >= 0) * (ff < T)])
+        ll = np.append(ff[1:] - ff[:-1], T - ff[-1])
+        h = np.exp(log(g) * np.arange(T, dtype=np.float32))
+        P.resize(0)
+        for i in range(len(ff)):
+            q = h[:ll[i]]
+            newpool.v = q.dot(fluor[ff[i]:ff[i] + ll[i]]) - (b / (1 - g) + lam) * (1 - g**ll[i])
+            newpool.w = q.dot(q)
+            newpool.t = ff[i]
+            newpool.l = ll[i]
+            P.push_back(newpool)
+        P[P.size() - 1].v -= lam * g**P[P.size() - 1].l  # |s|_1 instead |c|_1
+        c = np.empty(T, dtype=np.float32)
+
+        c, P = oasis(P, g, c)
+
+    if penalty == 0:  # get (locally optimal) L0 solution
+        lls = [(P[i + 1].v / P[i + 1].w - P[i].v / P[i].w * g**P[i].l)
+               for i in range(P.size() - 1)]
+        pos = [P[i + 1].t for i in np.argsort(lls)[::-1]]
+        y = y - b
+        res = -y
+        RSS = y.dot(y)
+        c = np.zeros_like(y)
+        P.resize(0)
+        newpool.v, newpool.w, newpool.t, newpool.l = 0, 1, 0, len(y)
+        P.push_back(newpool)
+        for p in pos:
+            i = 0
+            while P[i].t + P[i].l <= p:
+                i += 1
+            # split current pool at pos
+            j, k = P[i].t, P[i].l
+            q = h[:j - p + k]
+            newpool.v = q.dot(y[p:j + k])
+            newpool.w, newpool.t, newpool.l = q.dot(q), p, j - p + k
+            P.insert(P.begin() + i + 1, newpool)
+            q = h[:p - j]
+            P[i].v, P[i].w, P[i].t, P[i].l = q.dot(y[j:p]), q.dot(q), j, p - j
+            for t in [i, i + 1]:
+                c[P[t].t:P[t].t + P[t].l] = fmax(0, P[t].v) / P[t].w * h[:P[t].l]
+            # calc RSS
+            RSS -= res[j:j + k].dot(res[j:j + k])
+            res[P[i].t:j + k] = c[P[i].t:j + k] - y[P[i].t:j + k]
+            RSS += res[P[i].t:j + k].dot(res[P[i].t:j + k])
+            if RSS < thresh:
+                break
+
+    # construct s
+    s = c.copy()
+    s[0] = 0
+    s[1:] -= g * c[:-1]
+    return c, s, b, g, lam
