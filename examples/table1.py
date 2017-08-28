@@ -7,7 +7,7 @@ Created on Thu Aug 4
 import numpy as np
 from timeit import Timer
 from oasis import oasisAR1, constrained_oasisAR1
-from functions import gen_sinusoidal_data, estimate_parameters
+from oasis.functions import gen_sinusoidal_data, estimate_parameters
 
 
 g = .95

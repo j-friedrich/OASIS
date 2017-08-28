@@ -1,0 +1,8 @@
+setup.py
+UNKNOWN.egg-info/PKG-INFO
+UNKNOWN.egg-info/SOURCES.txt
+UNKNOWN.egg-info/dependency_links.txt
+UNKNOWN.egg-info/top_level.txt
+oasis/__init__.py
+oasis/functions.py
+oasis/oasis.cpp
