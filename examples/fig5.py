@@ -7,7 +7,7 @@ import numpy as np
 from matplotlib import pyplot as plt
 from oasis import oasisAR1, oasisAR2
 try:
-    from functions import init_fig, simpleaxis, gen_data, constrained_foopsi
+    from oasis.functions import init_fig, simpleaxis, gen_data, constrained_foopsi
 except:
     raise ImportError(
         'To produce this figure you actually need to have cvxpy installed.')

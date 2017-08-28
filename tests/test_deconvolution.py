@@ -1,7 +1,7 @@
 import numpy.testing as npt
 import numpy as np
-from oasis import oasisAR1, constrained_oasisAR1, oasisAR2, constrained_oasisAR2
-from functions import gen_data, foopsi, constrained_foopsi, onnls, constrained_onnlsAR2
+from oasis.oasis_methods import oasisAR1, constrained_oasisAR1, oasisAR2, constrained_oasisAR2
+from oasis.functions import gen_data, foopsi, constrained_foopsi, onnls, constrained_onnlsAR2
 
 
 def AR1(constrained=False):

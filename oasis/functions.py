@@ -757,7 +757,7 @@ def constrained_onnlsAR2(y, g, sn, optimize_b=True, b_nonneg=True, optimize_g=0,
     return c, s, b, g, lam
 
 
-# functions to estimate AR coefficients and sn from
+# oasis.functions to estimate AR coefficients and sn from
 # https://github.com/agiovann/Constrained_NMF.git
 def estimate_parameters(y, p=2, range_ff=[0.25, 0.5], method='mean', lags=5, fudge_factor=1.):
     """
