@@ -1,9 +1,0 @@
-setup.py
-oasis/__init__.py
-oasis/functions.py
-oasis/oasis_methods.cpp
-oasis.egg-info/PKG-INFO
-oasis.egg-info/SOURCES.txt
-oasis.egg-info/dependency_links.txt
-oasis.egg-info/requires.txt
-oasis.egg-info/top_level.txt
