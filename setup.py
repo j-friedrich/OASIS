@@ -20,8 +20,7 @@ ext_modules = [Extension("oasis.oasis_methods",
 
 setup(name='oasis',
       version = '0.0.1',
-      ext_modules=cythonize(ext_modules, 
-      compiler_directives={'cdivision': True}),
+      ext_modules=ext_modules, 
       packages=find_packages(),
       install_requires=required,
       tests_require=test_required)
