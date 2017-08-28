@@ -4,7 +4,7 @@
 
 import numpy as np
 from matplotlib import pyplot as plt
-from functions import init_fig, simpleaxis
+from oasis.functions import init_fig, simpleaxis
 
 init_fig()
 save_figs = False  # subfolder fig and video must exist if set to True

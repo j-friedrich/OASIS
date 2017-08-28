@@ -8,7 +8,7 @@ import matplotlib.pyplot as plt
 from timeit import Timer
 from scipy.io import loadmat
 from scipy.ndimage.filters import percentile_filter
-from oasis import oasisAR1, constrained_oasisAR1, oasisAR2, constrained_oasisAR2
+from oasis.oasis import oasisAR1, constrained_oasisAR1, oasisAR2, constrained_oasisAR2
 try:  # python 2
     from exceptions import ImportError, IOError
 except:  # python 3

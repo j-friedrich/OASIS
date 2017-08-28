@@ -6,8 +6,8 @@ an active set method for sparse nonnegative deconvolution
 import numpy as np
 from matplotlib import pyplot as plt
 import scipy
-from oasis import oasisAR1, constrained_oasisAR1
-from functions import init_fig, simpleaxis, gen_sinusoidal_data, estimate_parameters
+from oasis.oasis import oasisAR1, constrained_oasisAR1
+from oasis.functions import init_fig, simpleaxis, gen_sinusoidal_data, estimate_parameters
 
 init_fig()
 # colors for colorblind from  http://www.cookbook-r.com/Graphs/Colors_(ggplot2)/
