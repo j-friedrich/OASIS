@@ -3,7 +3,7 @@ import scipy
 import scipy.signal
 import matplotlib.pyplot as plt
 from math import sqrt, log, exp
-from oasis import constrained_oasisAR1, oasisAR1
+from .oasis import constrained_oasisAR1, oasisAR1
 from warnings import warn
 from scipy.optimize import minimize
 try:
