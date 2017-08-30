@@ -25,7 +25,7 @@ setup(name='oasis',
       url='https://github.com/j-friedrich/OASIS',
       license='GPL-3',
       description='Fast algorithm for deconvolution of neural calcium imaging traces',
-      ext_modules=cythonize(ext_modules),
+      ext_modules=cythonize(ext_modules,compiler_directives={'cdivision': True}),
       packages=find_packages(),
       install_requires=required,
       tests_require=test_required)
