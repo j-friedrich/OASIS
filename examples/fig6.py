@@ -5,7 +5,8 @@ an active set method for sparse nonnegative deconvolution
 
 import numpy as np
 from matplotlib import pyplot as plt
-from oasis.functions import init_fig, simpleaxis, gen_data
+from oasis.functions import gen_data
+from oasis.plotting import init_fig, simpleaxis
 
 init_fig()
 # colors for colorblind from  http://www.cookbook-r.com/Graphs/Colors_(ggplot2)/
@@ -15,44 +16,44 @@ col = ['#0072B2', '#009E73', '#D55E00', '#E69F00',
 
 def deconvolveAR1(y, g, tau=np.inf, lam=0, s_min=0):
 
-    len_active_set = y.shape[0]
-    solution = y - lam  # np.empty(len_active_set)
+    len_P = y.shape[0]
+    solution = y - lam  # np.empty(len_P)
     solution[-1] = y[-1] - lam / (1 - g)
-    active_set = [[y[i] - lam, 1, i, 1] for i in range(len_active_set)]
-    active_set[-1] = [y[-1] - lam / (1 - g), 1, len_active_set - 1, 1]  # |s|_1 instead |c|_1
+    P = [[y[i] - lam, 1, i, 1] for i in range(len_P)]
+    P[-1] = [y[-1] - lam / (1 - g), 1, len_P - 1, 1]  # |s|_1 instead |c|_1
 
     c = 0
-    while c < len_active_set - 1:
-        while c < len_active_set - 1 and \
-            (active_set[c][0] / active_set[c][1] * g**active_set[c][3] + s_min <=
-             active_set[c + 1][0] / active_set[c + 1][1]):
+    while c < len_P - 1:
+        while c < len_P - 1 and \
+            (P[c][0] / P[c][1] * g**P[c][3] + s_min <=
+             P[c + 1][0] / P[c + 1][1]):
             c += 1
-        if c == len_active_set - 1:
+        if c == len_P - 1:
             break
 
         # merge two pools
-        active_set[c][0] += active_set[c + 1][0] * g**active_set[c][3]
-        active_set[c][1] += active_set[c + 1][1] * g**(2 * active_set[c][3])
-        active_set[c][3] += active_set[c + 1][3]
-        active_set.pop(c + 1)
-        len_active_set -= 1
+        P[c][0] += P[c + 1][0] * g**P[c][3]
+        P[c][1] += P[c + 1][1] * g**(2 * P[c][3])
+        P[c][3] += P[c + 1][3]
+        P.pop(c + 1)
+        len_P -= 1
         # update solution back to lag tau
-        v, w, f, l = active_set[c]
+        v, w, f, l = P[c]
         solution[max(f, f + l - tau - 1):f + l] = max(v, 0) / \
             w * g**np.arange(max(0, l - tau - 1), l)
 
         while c > 0 and \
-            (active_set[c - 1][0] / active_set[c - 1][1] * g**active_set[c - 1][3] + s_min >
-                active_set[c][0] / active_set[c][1]):
+            (P[c - 1][0] / P[c - 1][1] * g**P[c - 1][3] + s_min >
+                P[c][0] / P[c][1]):
             c -= 1
             # merge two pools
-            active_set[c][0] += active_set[c + 1][0] * g**active_set[c][3]
-            active_set[c][1] += active_set[c + 1][1] * g**(2 * active_set[c][3])
-            active_set[c][3] += active_set[c + 1][3]
-            active_set.pop(c + 1)
-            len_active_set -= 1
+            P[c][0] += P[c + 1][0] * g**P[c][3]
+            P[c][1] += P[c + 1][1] * g**(2 * P[c][3])
+            P[c][3] += P[c + 1][3]
+            P.pop(c + 1)
+            len_P -= 1
             # update solution back to lag tau
-            v, w, f, l = active_set[c]
+            v, w, f, l = P[c]
             solution[max(f, f + l - tau - 1):f + l] = max(v, 0) / \
                 w * g**np.arange(max(0, l - tau - 1), l)
 
@@ -66,7 +67,7 @@ plt.figure(figsize=(7, 5))
 for j, sn in enumerate([.1, .2, .3]):
     Y, trueC, trueSpikes = gen_data(sn=sn)
     N = len(Y)
-    C = np.asarray([[deconvolveAR1(y, .95, tau=tau, lam=(.2 + .25 * np.exp(-tau / 2.)))  # lam=(.12 / (1 - (.8 if sn == .3 else .7)**(tau + 1))
+    C = np.asarray([[deconvolveAR1(y, .95, tau=tau, lam=(.2 + .25 * np.exp(-tau / 2.)))
                      for tau in tauls] for y in Y])
     S = np.zeros_like(C)
     S[:, :, 1:] = C[:, :, 1:] - .95 * C[:, :, :-1]
@@ -155,18 +156,15 @@ l = []
 for i, tau in enumerate(tauls):
     ax = plt.subplot(6, 1, i + 1)
     for q in np.where(trueSpikes[0])[0]:
-        # plt.axvline(q, color='gray')
         plt.plot([q, q], [0, 1.15], color='gray', clip_on=False)
     l += [plt.plot(S[i], c=col[i], label=tau)[0]]
     if i < 5:
-        # plt.xticks([600, 1200, 1800, 2400], [''] * 4)
         plt.xticks(range(0, 3000, 750), [''] * 4)
         plt.xlim(0, 2000)
         plt.gca().set_xticklabels([])
     simpleaxis(plt.gca())
     plt.yticks([0, 1], ['', ''])
     plt.ylim(0, 1.1)
-# plt.xticks([600, 1200, 1800, 2400], ['', 40, '', 80])
 plt.xticks(range(0, 3000, 750), range(0, 100, 25))
 plt.xlim(0, 2000)
 plt.yticks([0, 1], [0, 1])

@@ -6,8 +6,10 @@ an active set method for sparse nonnegative deconvolution
 import numpy as np
 from matplotlib import pyplot as plt
 import scipy
+from copy import deepcopy
 from oasis import oasisAR1, constrained_oasisAR1
-from oasis.functions import init_fig, simpleaxis, gen_sinusoidal_data, estimate_parameters
+from oasis.functions import gen_sinusoidal_data, estimate_parameters
+from oasis.plotting import init_fig, simpleaxis
 
 init_fig()
 # colors for colorblind from  http://www.cookbook-r.com/Graphs/Colors_(ggplot2)/
@@ -113,6 +115,7 @@ def plot_trace(n=0, lg=False):
     plt.yticks([0, 2], [0, 2])
     plt.xticks([300, 600, 900, 1200], ['', ''])
 
+
 # init params
 n = -2
 lam = 0
@@ -139,7 +142,6 @@ bb = res.dot(tmp)
 cc = RSS - sn**2 * T
 ll = (-bb + np.sqrt(bb**2 - aa * cc)) / aa
 lam += ll
-from copy import deepcopy
 a_s_tmp = deepcopy(active_set)
 for a in a_s_tmp[:-1]:
     a[0] -= lam * (1 - g**len(a[2]))
@@ -162,12 +164,12 @@ plt.ylim(114, 138)
 plt.xlabel('$\lambda$', labelpad=-40, x=1.1)
 plt.ylabel('RSS', labelpad=-30, y=.42)
 # plot result after updating lambda, but before rerunning oasis to fix violations
-ax = fig.add_axes([ax1, .73,  1 - ax1, .12])
+ax = fig.add_axes([ax1, .73, 1 - ax1, .12])
 plot_trace(n)
 
 # plot result after rerunning oasis to fix violations
 solution, active_set = foo(active_set, g, ll)
-ax = fig.add_axes([ax1, .59,  1 - ax1, .12])
+ax = fig.add_axes([ax1, .59, 1 - ax1, .12])
 plot_trace(n)
 plt.ylabel('Fluorescence', y=0)
 
@@ -187,6 +189,8 @@ def bar(g, a_s):
         tmp = tmp * q - yy
         return np.dot(tmp, tmp)
     return np.sum([foo(g, a[2][0], len(a[2])) for a in a_s])
+
+
 g = scipy.optimize.fminbound(lambda x: bar(x, active_set), 0, 1)  # minimizes residual
 # plot to illustrate updating gamma
 ax = fig.add_axes([ax0, .45, .08, .12])

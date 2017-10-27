@@ -14,11 +14,12 @@ try:  # python 2
 except:  # python 3
     pass
 try:
-    from oasis.functions import init_fig, simpleaxis, gen_data, foopsi, constrained_foopsi, \
+    from oasis.functions import gen_data, foopsi, constrained_foopsi, \
         onnls, estimate_parameters, cvxpy_installed
 except:
     raise ImportError(
         'To produce this figure you actually need to have cvxpy installed.')
+from oasis.plotting import init_fig, simpleaxis
 
 init_fig()
 # colors for colorblind from  http://www.cookbook-r.com/Graphs/Colors_(ggplot2)/

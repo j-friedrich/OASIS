@@ -1,5 +1,5 @@
-
 import matplotlib.pyplot as plt
+
 
 def init_fig():
     """change some defaults for plotting"""

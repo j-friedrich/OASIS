@@ -4,7 +4,8 @@ for OASIS, an active set method for sparse nonnegative deconvolution
 """
 
 from matplotlib import pyplot as plt
-from oasis.functions import init_fig, simpleaxis, gen_data
+from oasis.functions import gen_data
+from oasis.plotting import init_fig, simpleaxis
 
 init_fig()
 # colors for colorblind from  http://www.cookbook-r.com/Graphs/Colors_(ggplot2)/
