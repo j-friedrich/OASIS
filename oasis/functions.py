@@ -4,7 +4,7 @@ import scipy.signal
 from math import sqrt, log, exp
 from oasis import constrained_oasisAR1, oasisAR1
 from warnings import warn
-from scipy.optimize import minimize
+from scipy.optimize import minimize, curve_fit
 try:
     import cvxpy as cvx
     cvxpy_installed = True
@@ -714,7 +714,7 @@ def constrained_onnlsAR2(y, g, sn, optimize_b=True, b_nonneg=True, optimize_g=0,
                 tmp[f + 1:f + l] = g11[1:l] * tmp[f] + g12[1:l] * tmp[f - 1]
             return tmp
         spikesizes = np.sort(s[s > 1e-6])
-        i = len(spikesizes) / 2
+        i = len(spikesizes) // 2
         l = 0
         u = len(spikesizes) - 1
         while u - l > 1:
@@ -724,11 +724,11 @@ def constrained_onnlsAR2(y, g, sn, optimize_b=True, b_nonneg=True, optimize_g=0,
             RSS = res.dot(res)
             if RSS < thresh or i == 0:
                 l = i
-                i = (l + u) / 2
+                i = (l + u) // 2
                 res0 = tmp
             else:
                 u = i
-                i = (l + u) / 2
+                i = (l + u) // 2
         if i > 0:
             c = res0
             s = np.append([0, 0], c[2:] - g[0] * c[1:-1] - g[1] * c[:-2])
@@ -736,9 +736,9 @@ def constrained_onnlsAR2(y, g, sn, optimize_b=True, b_nonneg=True, optimize_g=0,
     return c, s, b, g, lam
 
 
-# oasis.functions to estimate AR coefficients and sn from
+# functions to estimate AR coefficients and sn from
 # https://github.com/agiovann/Constrained_NMF.git
-def estimate_parameters(y, p=2, range_ff=[0.25, 0.5], method='mean', lags=5, fudge_factor=1.):
+def estimate_parameters(y, p=2, range_ff=[0.25, 0.5], method='mean', lags=10, fudge_factor=1., nonlinear_fit=False):
     """
     Estimate noise standard deviation and AR coefficients
 
@@ -757,12 +757,12 @@ def estimate_parameters(y, p=2, range_ff=[0.25, 0.5], method='mean', lags=5, fud
     """
 
     sn = GetSn(y, range_ff, method)
-    g = estimate_time_constant(y, p, sn, lags, fudge_factor)
+    g = estimate_time_constant(y, p, sn, lags, fudge_factor, nonlinear_fit)
 
     return g, sn
 
 
-def estimate_time_constant(y, p=2, sn=None, lags=5, fudge_factor=1.):
+def estimate_time_constant(y, p=2, sn=None, lags=10, fudge_factor=1., nonlinear_fit=False):
     """
     Estimate AR model parameters through the autocovariance function
 
@@ -789,12 +789,30 @@ def estimate_time_constant(y, p=2, sn=None, lags=5, fudge_factor=1.):
         sn = GetSn(y)
 
     lags += p
-    xc = axcov(y, lags)
-    xc = xc[:, np.newaxis]
+    # xc = axcov(y, lags)[lags:]
+    y = y - y.mean()
+    xc = np.array([y[i:].dot(y[:-i if i else None]) for i in range(1 + lags)]) / len(y)
 
-    A = scipy.linalg.toeplitz(xc[lags + np.arange(lags)],
-                              xc[lags + np.arange(p)]) - sn**2 * np.eye(lags, p)
-    g = np.linalg.lstsq(A, xc[lags + 1:])[0]
+    if nonlinear_fit and p <= 2:
+        xc[0] -= sn**2
+        g1 = xc[:-1].dot(xc[1:]) / xc[:-1].dot(xc[:-1])
+        if p == 1:
+            def func(x, a, g):
+                return a * g**x
+            popt, pcov = curve_fit(func, list(range(len(xc))), xc, (xc[0], g1)) #, bounds=(0, [3 * xc[0], 1]))
+            return popt[1:2] * fudge_factor
+        elif p == 2:
+            def func(x, a, d, r):
+                return a * (d**(x + 1) - r**(x + 1) / (1 - r**2) * (1 - d**2))
+            popt, pcov = curve_fit(func, list(range(len(xc))), xc, (xc[0], g1, .1))
+            d, r = popt[1:]
+            d *= fudge_factor
+            return np.array([d + r, -d * r])
+
+    xc = xc[:, np.newaxis]
+    A = scipy.linalg.toeplitz(xc[np.arange(lags)],
+                              xc[np.arange(p)]) - sn**2 * np.eye(lags, p)
+    g = np.linalg.lstsq(A, xc[1:])[0]
     gr = np.roots(np.concatenate([np.array([1]), -g.flatten()]))
     gr = (gr + gr.conjugate()) / 2.
     gr[gr > 1] = 0.95 + np.random.normal(0, 0.01, np.sum(gr > 1))
