@@ -5,7 +5,7 @@ Tools for extracting the neural activity from fluorescence calcium imaging data 
 The code can be readily run on neural temporal fluorescence calcium imaging data. Please have a look at the [demo](https://github.com/j-friedrich/OASIS/blob/master/examples/Demo.ipynb).
 
 ## Requirements
-The scripts were tested on Linux and MacOS with a typical numerical/scientific Python 2.7 or 3.5 installation, e.g. using Anaconda or Canopy, that included the following
+The scripts were tested on Linux and MacOS (some users successfully used Windows too) with a typical numerical/scientific Python 2.7 or 3.5 installation, e.g. using Anaconda or Canopy, that included the following
 
 - python >= 2.7.11
 - matplotlib >= 1.5.1
@@ -22,6 +22,7 @@ Optionally, because not necessary for running our fast method on your own data, 
 ## Installation
 For faster execution some functions have been written in Cython and need to be compiled by running:
 `python setup.py build_ext --inplace`
+(If the compilation fails on Windows, see Srikanth's [gist](https://gist.github.com/srikanthbojja/5c4205e37d28e1fb2b5b45e2e907b419).)
 
 To clean up temporary files follow it by:
 `python setup.py clean --all`
