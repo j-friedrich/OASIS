@@ -21,7 +21,8 @@ Optionally, because not necessary for running our fast method on your own data, 
 
 ## Installation
 For faster execution some functions have been written in Cython and need to be compiled by running:
-`python setup.py build_ext --inplace`
+`python setup.py build_ext --inplace`  
+(Ignore the warnings that Cython is using a deprecated Numpy API. Following the [cython online docs](http://docs.cython.org/en/latest/src/reference/compilation.html#configuring-the-c-build), for the time being, it is just a warning that you can ignore.)  
 (If the compilation fails on Windows, see Srikanth's [gist](https://gist.github.com/srikanthbojja/5c4205e37d28e1fb2b5b45e2e907b419).)
 
 To clean up temporary files follow it by:
@@ -29,7 +30,7 @@ To clean up temporary files follow it by:
 
 ## Examples
 The scripts to produce the figures and table are in the subfolder 'examples' with names obvious from the PLoS Comput Biol paper. 
-They can be run with `python examples/fig[1-6].py`. 
+They can be run with `ipython examples/fig[1-6].py`. 
 
 The results of fig4 and table1 will be even better than in the paper, because the version in the master branch includes later improvements, in patricularly up to an order of magnitude less computing time. The specific points in history marking the time of the publications have been tagged.
 
