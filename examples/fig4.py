@@ -16,6 +16,7 @@ except:  # python 3
 try:
     from oasis.functions import gen_data, foopsi, constrained_foopsi, \
         onnls, estimate_parameters, cvxpy_installed
+    from cvxpy import SolverError
 except:
     raise ImportError(
         'To produce this figure you actually need to have cvxpy installed.')
@@ -183,18 +184,22 @@ N, T = Y.shape
 # timeit
 ts = {}
 for solver in solvers:
-    ts[solver] = np.zeros(N)
+    ts[solver] = np.nan * np.zeros(N)
     print('running %7s with p=1 and given lambda' % solver)
     for i, y in enumerate(Y):
         if solver == 'OASIS':
             ts[solver][i] = Timer(lambda: oasisAR1(y, g=g, lam=2.4)
                                   ).timeit(number=runs) / runs
         else:
-            ts[solver][i] = Timer(lambda: foopsi(y, g=[g], lam=2.4, solver=solver)
-                                  ).timeit(number=runs) / runs
+            try:
+                ts[solver][i] = Timer(lambda: foopsi(y, g=[g], lam=2.4, solver=solver)
+                                      ).timeit(number=runs) / runs
+            except SolverError:
+                print("The solver " + solver + " is actually not installed, hence skipping it.")
+                break
 constrained_ts = {}
 for solver in solvers[:-1]:  # GUROBI failed
-    constrained_ts[solver] = np.zeros(N)
+    constrained_ts[solver] = np.nan * np.zeros(N)
     print('running %7s with p=1 and optimizing lambda such that noise constraint is tight'
           % solver)
     for i, y in enumerate(Y):
@@ -202,8 +207,12 @@ for solver in solvers[:-1]:  # GUROBI failed
             constrained_ts[solver][i] = Timer(lambda: constrained_oasisAR1(
                 y, g=g, sn=sn)).timeit(number=runs) / runs
         else:
-            constrained_ts[solver][i] = Timer(lambda: constrained_foopsi(
-                y, g=[g], sn=sn, solver=solver)).timeit(number=runs) / runs
+            try:
+                constrained_ts[solver][i] = Timer(lambda: constrained_foopsi(
+                    y, g=[g], sn=sn, solver=solver)).timeit(number=runs) / runs
+            except SolverError:
+                print("The solver " + solver + " is actually not installed, hence skipping it.")
+                break
 constrained_ts['GUROBI'] = np.zeros(N) * np.nan  # GUROBI failed
 
 # plot
@@ -225,14 +234,14 @@ plt.yticks([0, .5, 1], [0, .5, 1.])
 plt.ylabel('Time [s]', labelpad=-1, y=.52)
 
 simpleaxis(plt.gca())
-fig.add_axes([.26, .55, .4, .4])
+fig.add_axes([.3, .55, .38, .4])
 plt.semilogy(range(len(solvers)), [np.mean(ts[s]) for s in solvers], 'o', ms=8, c=col[0])
 plt.semilogy(range(len(solvers)), [np.mean(constrained_ts[s]) for s in solvers],
              'x', ms=8, mew=3, mec=col[1], c=col[1])
 plt.xticks(range(len(solvers)), ['O.', 'E.', 'M.', 'S.', 'G.'])
 plt.xlim(-.2, 4.2)
-plt.yticks(*[[.01, .1, 1]] * 2)
-plt.ylim(.002, 2.4)
+plt.yticks(*[[.001, .01, .1, 1]] * 2)
+# plt.ylim(.002, 2.4)
 plt.show()
 
 
@@ -246,18 +255,22 @@ N, T = Y.shape
 # timeit
 ts = {}
 for solver in solvers:
-    ts[solver] = np.zeros(N)
+    ts[solver] = np.nan * np.zeros(N)
     print('running %7s with p=2 and given lambda' % solver)
     for i, y in enumerate(Y):
         if solver == 'OASIS':
             ts[solver][i] = Timer(lambda: oasisAR2(
                 y, g1=gamma[0], g2=gamma[1], lam=25, T_over_ISI=5)).timeit(number=runs) / runs
         else:
-            ts[solver][i] = Timer(lambda: foopsi(
-                y, g=gamma, lam=25, solver=solver)).timeit(number=runs) / runs
+            try:
+                ts[solver][i] = Timer(lambda: foopsi(
+                    y, g=gamma, lam=25, solver=solver)).timeit(number=runs) / runs
+            except SolverError:
+                print("The solver " + solver + " is actually not installed, hence skipping it.")
+                break
 constrained_ts = {}
 for solver in solvers[:-1]:  # GUROBI failed
-    constrained_ts[solver] = np.zeros(N)
+    constrained_ts[solver] = np.nan * np.zeros(N)
     print('running %7s with p=2 and optimizing lambda such that noise constraint is tight'
           % solver)
     for i, y in enumerate(Y):
@@ -265,8 +278,12 @@ for solver in solvers[:-1]:  # GUROBI failed
             constrained_ts[solver][i] = Timer(lambda: constrained_oasisAR2(
                 y, g1=gamma[0], g2=gamma[1], sn=sn, T_over_ISI=5)).timeit(number=runs) / runs
         else:
-            constrained_ts[solver][i] = Timer(lambda: constrained_foopsi(
-                y, g=gamma, sn=sn, solver=solver)).timeit(number=runs) / runs
+            try:
+                constrained_ts[solver][i] = Timer(lambda: constrained_foopsi(
+                    y, g=gamma, sn=sn, solver=solver)).timeit(number=runs) / runs
+            except SolverError:
+                print("The solver " + solver + " is actually not installed, hence skipping it.")
+                break
 constrained_ts['GUROBI'] = np.zeros(N) * np.nan  # GUROBI failed
 
 # plot
@@ -283,17 +300,17 @@ plt.errorbar(range(len(solvers)),
 plt.xticks(range(len(solvers)), solvers)
 plt.xlim(-.2, 4.2)
 plt.ylim(-.15, plt.ylim()[1])
-plt.yticks(*[[0, 1, 2, 3]] * 2)
+plt.yticks(*[[0, 1, 2]] * 2)
 plt.xlabel('Solver')
 plt.ylabel('Time [s]', y=.52, labelpad=12)
 simpleaxis(plt.gca())
-fig.add_axes([.26, .55, .4, .4])
+fig.add_axes([.3, .55, .38, .4])
 plt.semilogy(range(len(solvers)),
              [np.mean(ts[s]) for s in solvers], 'o', ms=8, c=col[0])
 plt.semilogy(range(len(solvers)),
              [np.mean(constrained_ts[s]) for s in solvers], 'x', ms=8, mew=3, mec=col[1], c=col[1])
 plt.xticks(range(len(solvers)), ['O.', 'E.', 'M.', 'S.', 'G.'])
 plt.xlim(-.2, 4.2)
-plt.yticks(*[[.1, 1]] * 2)
-plt.ylim(.01, 4)
+plt.yticks(*[[.01, .1, 1]] * 2)
+plt.ylim(.005, 4)
 plt.show()
