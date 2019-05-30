@@ -16,7 +16,7 @@ before_install:
     - "conda info -a"
     - "conda create -q -n test-environment python=$TRAVIS_PYTHON_VERSION nose numpy scipy matplotlib cython"
     - "source activate test-environment"
-    - "conda install -c cvxgrp cvxpy"
+    - "conda install -c conda-forge cvxpy"
     - "python setup.py build_ext --inplace"
 script:
     - "nosetests"
