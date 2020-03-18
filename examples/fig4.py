@@ -17,7 +17,7 @@ try:
     from oasis.functions import gen_data, foopsi, constrained_foopsi, \
         onnls, estimate_parameters, cvxpy_installed
     from cvxpy import SolverError
-except:
+except ImportError:
     raise ImportError(
         'To produce this figure you actually need to have cvxpy installed.')
 from oasis.plotting import init_fig, simpleaxis

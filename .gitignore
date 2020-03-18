@@ -1,5 +1,6 @@
 ## Compiled python files
 *.c
+*.cpp
 *.so
 *.pyc
 
