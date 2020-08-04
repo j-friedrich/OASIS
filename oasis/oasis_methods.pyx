@@ -84,7 +84,9 @@ def oasisAR1(np.ndarray[DOUBLE, ndim=1] y, DOUBLE g, DOUBLE lam=0, DOUBLE s_min=
     # construct c
     c = np.empty(T)
     for j in range(i + 1):
-        tmp = fmax(P[j].v, 0) / P[j].w
+        tmp = P[j].v / P[j].w
+        if (j == 0 and tmp < 0) or (j > 0 and tmp < s_min):
+            tmp = 0
         for k in range(P[j].l):
             c[k + P[j].t] = tmp
             tmp *= g
@@ -1026,7 +1028,9 @@ def oasisAR1_f32(np.ndarray[SINGLE, ndim=1] y, SINGLE g, SINGLE lam=0, SINGLE s_
     # construct c
     c = np.empty(T, dtype=np.float32)
     for j in range(i + 1):
-        tmp = fmax(P[j].v, 0) / P[j].w
+        tmp = P[j].v / P[j].w
+        if (j == 0 and tmp < 0) or (j > 0 and tmp < s_min):
+            tmp = 0
         for k in range(P[j].l):
             c[k + P[j].t] = tmp
             tmp *= g
