@@ -279,9 +279,10 @@ def constrained_oasisAR1(np.ndarray[DOUBLE, ndim=1] y, DOUBLE g, DOUBLE sn,
                 Pl = [P[i].l for i in idx[-optimize_g:]]
 
                 def bar(y, g, Pt, Pl):
-                    h = np.exp(log(g) * np.arange(ma))
+                    lg = log(g)
+                    h = np.exp(lg * np.arange(ma))
 
-                    def foo(y, t, l, q, g, lam=lam):
+                    def foo(y, t, l, q, g, lg, lam=lam):
                         yy = y[t:t + l]
                         if t + l == T:  # |s|_1 instead |c|_1
                             tmp = ((q.dot(yy) - lam) * (1 - g * g) /
@@ -290,7 +291,7 @@ def constrained_oasisAR1(np.ndarray[DOUBLE, ndim=1] y, DOUBLE g, DOUBLE sn,
                             tmp = ((q.dot(yy) - lam * (1 - exp(lg*l))) * (1 - g * g) /
                                    (1 - exp(lg*2 * l))) * q - yy
                         return tmp.dot(tmp)
-                    return sum([foo(y, Pt[i], Pl[i], h[:Pl[i]], g)
+                    return sum([foo(y, Pt[i], Pl[i], h[:Pl[i]], g, lg)
                                 for i in range(optimize_g)])
 
                 def baz(y, Pt, Pl):
@@ -300,8 +301,9 @@ def constrained_oasisAR1(np.ndarray[DOUBLE, ndim=1] y, DOUBLE g, DOUBLE sn,
                 if abs(aa - g) < 1e-4:
                     g_converged = True
                 g = aa
+                lg = log(g)
                 # explicit kernel, useful for constructing c
-                h = np.exp(log(g) * np.arange(T))
+                h = np.exp(lg * np.arange(T))
                 for i in range(P.size()):
                     q = h[:P[i].l]
                     P[i].v = q.dot(y[P[i].t:P[i].t + P[i].l]) - lam * (1 - exp(lg*P[i].l))
@@ -379,9 +381,10 @@ def constrained_oasisAR1(np.ndarray[DOUBLE, ndim=1] y, DOUBLE g, DOUBLE sn,
 
                 def bar(y, opt, Pt, Pl):
                     b, g = opt
-                    h = np.exp(log(g) * np.arange(ma))
+                    lg = log(g)
+                    h = np.exp(lg * np.arange(ma))
 
-                    def foo(y, t, l, q, b, g, lam=lam):
+                    def foo(y, t, l, q, b, g, lg, lam=lam):
                         yy = y[t:t + l] - b
                         if t + l == T:  # |s|_1 instead |c|_1
                             tmp = ((q.dot(yy) - lam) * (1 - g * g) /
@@ -390,7 +393,7 @@ def constrained_oasisAR1(np.ndarray[DOUBLE, ndim=1] y, DOUBLE g, DOUBLE sn,
                             tmp = ((q.dot(yy) - lam * (1 - exp(lg*l))) * (1 - g * g) /
                                    (1 - exp(lg*2 * l))) * q - yy
                         return tmp.dot(tmp)
-                    return sum([foo(y, Pt[i], Pl[i], h[:Pl[i]], b, g)
+                    return sum([foo(y, Pt[i], Pl[i], h[:Pl[i]], b, g, lg)
                                 for i in range(P.size() if P.size() < optimize_g else optimize_g)])
 
                 def baz(y, Pt, Pl):
@@ -402,8 +405,9 @@ def constrained_oasisAR1(np.ndarray[DOUBLE, ndim=1] y, DOUBLE g, DOUBLE sn,
                 if fabs(result['x'][1] - g) < 1e-3:
                     g_converged = True
                 b, g = result['x']
+                lg = log(g)
                 # explicit kernel, useful for constructing c
-                h = np.exp(log(g) * np.arange(T))
+                h = np.exp(lg * np.arange(T))
                 for i in range(P.size()):
                     q = h[:P[i].l]
                     P[i].v = q.dot(y[P[i].t:P[i].t + P[i].l]) - \
@@ -1129,10 +1133,11 @@ def constrained_oasisAR1_f32(np.ndarray[SINGLE, ndim=1] y, SINGLE g, SINGLE sn,
 
         cdef:
             Py_ssize_t i, j, k, t, T
-            SINGLE tmp
+            SINGLE tmp, lg
             vector[Pool32] P
             Pool32 newpool
 
+        lg = log(g)
         T = len(y)
         # [value, weight, start time, length] of pool
         newpool.v, newpool.w, newpool.t, newpool.l = y[0], 1, 0, 1
@@ -1166,8 +1171,9 @@ def constrained_oasisAR1_f32(np.ndarray[SINGLE, ndim=1] y, SINGLE g, SINGLE sn,
 
         cdef:
             Py_ssize_t i, j, k
-            SINGLE tmp
+            SINGLE tmp, lg
 
+        lg = log(g)
         i = 0
         while i < P.size() - 1:
             i += 1
@@ -1229,9 +1235,10 @@ def constrained_oasisAR1_f32(np.ndarray[SINGLE, ndim=1] y, SINGLE g, SINGLE sn,
                 Pl = [P[i].l for i in idx[-optimize_g:]]
 
                 def bar(y, g, Pt, Pl):
-                    h = np.exp(log(g) * np.arange(ma, dtype=np.float32))
+                    lg = log(g)
+                    h = np.exp(lg * np.arange(ma, dtype=np.float32))
 
-                    def foo(y, t, l, q, g, lam=lam):
+                    def foo(y, t, l, q, g, lg, lam=lam):
                         yy = y[t:t + l]
                         if t + l == T:  # |s|_1 instead |c|_1
                             tmp = ((q.dot(yy) - lam) * (1 - g * g) /
@@ -1240,7 +1247,7 @@ def constrained_oasisAR1_f32(np.ndarray[SINGLE, ndim=1] y, SINGLE g, SINGLE sn,
                             tmp = ((q.dot(yy) - lam * (1 - exp(lg*l))) * (1 - g * g) /
                                    (1 - exp(lg*2*l))) * q - yy
                         return tmp.dot(tmp)
-                    return sum([foo(y, Pt[i], Pl[i], h[:Pl[i]], g)
+                    return sum([foo(y, Pt[i], Pl[i], h[:Pl[i]], g, lg)
                                 for i in range(optimize_g)])
 
                 def baz(y, Pt, Pl):
@@ -1250,8 +1257,9 @@ def constrained_oasisAR1_f32(np.ndarray[SINGLE, ndim=1] y, SINGLE g, SINGLE sn,
                 if abs(aa - g) < 1e-4:
                     g_converged = True
                 g = aa
+                lg = log(g)
                 # explicit kernel, useful for constructing c
-                h = np.exp(log(g) * np.arange(T, dtype=np.float32))
+                h = np.exp(lg * np.arange(T, dtype=np.float32))
                 for i in range(P.size()):
                     q = h[:P[i].l]
                     P[i].v = q.dot(y[P[i].t:P[i].t + P[i].l]) - lam * (1 - exp(lg*P[i].l))
@@ -1329,9 +1337,10 @@ def constrained_oasisAR1_f32(np.ndarray[SINGLE, ndim=1] y, SINGLE g, SINGLE sn,
 
                 def bar(y, opt, Pt, Pl):
                     b, g = opt
-                    h = np.exp(log(g) * np.arange(ma, dtype=np.float32))
+                    lg = log(g)
+                    h = np.exp(lg * np.arange(ma, dtype=np.float32))
 
-                    def foo(y, t, l, q, b, g, lam=lam):
+                    def foo(y, t, l, q, b, g, lg, lam=lam):
                         yy = y[t:t + l] - b
                         if t + l == T:  # |s|_1 instead |c|_1
                             tmp = ((q.dot(yy) - lam) * (1 - g * g) /
@@ -1340,7 +1349,7 @@ def constrained_oasisAR1_f32(np.ndarray[SINGLE, ndim=1] y, SINGLE g, SINGLE sn,
                             tmp = ((q.dot(yy) - lam * (1 - exp(lg*l))) * (1 - g * g) /
                                    (1 - exp(lg*2*l))) * q - yy
                         return tmp.dot(tmp)
-                    return sum([foo(y, Pt[i], Pl[i], h[:Pl[i]], b, g)
+                    return sum([foo(y, Pt[i], Pl[i], h[:Pl[i]], b, g, lg)
                                 for i in range(P.size() if P.size() < optimize_g else optimize_g)])
 
                 def baz(y, Pt, Pl):
@@ -1352,8 +1361,9 @@ def constrained_oasisAR1_f32(np.ndarray[SINGLE, ndim=1] y, SINGLE g, SINGLE sn,
                 if fabs(result['x'][1] - g) < 1e-3:
                     g_converged = True
                 b, g = result['x']
+                lg = log(g)
                 # explicit kernel, useful for constructing c
-                h = np.exp(log(g) * np.arange(T, dtype=np.float32))
+                h = np.exp(lg * np.arange(T, dtype=np.float32))
                 for i in range(P.size()):
                     q = h[:P[i].l]
                     P[i].v = q.dot(y[P[i].t:P[i].t + P[i].l]) - \
@@ -1388,7 +1398,7 @@ def constrained_oasisAR1_f32(np.ndarray[SINGLE, ndim=1] y, SINGLE g, SINGLE sn,
                        for i in range(P.size())])  # this window size seems necessary and sufficient
         ff = np.unique(ff[(ff >= 0) * (ff < T)])
         ll = np.append(ff[1:] - ff[:-1], T - ff[-1])
-        h = np.exp(log(g) * np.arange(T, dtype=np.float32))
+        h = np.exp(lg * np.arange(T, dtype=np.float32))
         P.resize(0)
         for i in range(len(ff)):
             q = h[:ll[i]]
