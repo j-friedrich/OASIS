@@ -150,6 +150,10 @@ def deconvolve(y, g=(None,), sn=None, b=None, b_nonneg=True,
     lam: float
         Optimal Lagrange multiplier for noise constraint under L1 penalty
     """
+    if np.can_cast(y.dtype,np.double,casting="safe"):
+        y = y.astype(np.double)
+    else:
+        raise TypeError("Input trace should be a np.double")
 
     if g[0] is None or sn is None:
         fudge_factor = .97 if (optimize_g and len(g) == 1) else .98
