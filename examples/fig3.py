@@ -113,7 +113,7 @@ def plot_trace(n=0, lg=False):
     plt.ylim(0, 2.85)
     plt.xlim(0, 1500)
     plt.yticks([0, 2], [0, 2])
-    plt.xticks([300, 600, 900, 1200], ['', ''])
+    plt.xticks([300, 600, 900, 1200], ['', '', '', ''])
 
 
 # init params
