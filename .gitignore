@@ -10,3 +10,9 @@ build/
 # MacOS
 *.DS_Store
 *.egg-info/
+
+# Editors
+.idea/
+
+# Environment
+.venv/
