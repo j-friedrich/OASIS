@@ -4,12 +4,8 @@
 
 from Cython.Build import cythonize
 import numpy as np
-import os
 from setuptools.extension import Extension
 from setuptools import find_packages, setup
-
-os.environ["CC"] = "g++-10"
-os.environ["CXX"] = "g++-10"
 
 with open('requirements.txt', 'r') as f:
     required = f.read().splitlines()
