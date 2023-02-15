@@ -6,7 +6,7 @@ Tools for extracting the neural activity from fluorescence calcium imaging data 
 The code can be readily run on neural temporal fluorescence calcium imaging data. Please have a look at the [demo](https://github.com/j-friedrich/OASIS/blob/master/examples/Demo.ipynb).
 
 ## Requirements
-The scripts were tested on Linux and MacOS (some users successfully used Windows too) with a typical numerical/scientific Python 2.7 or 3.5-3.9 installation, e.g. using Anaconda or Canopy, that included the following
+The scripts were tested on Linux and MacOS (some users successfully used Windows too) with a typical numerical/scientific Python 2.7 or 3.5-3.11 installation that included the following
 
 - python >= 2.7.11
 - matplotlib >= 1.5.1
@@ -21,19 +21,37 @@ Optionally, because not necessary for running our fast method on your own data, 
 - mosek >= 7 (https://mosek.com, free academic license)
 
 ## Installation
-For faster execution some functions have been written in Cython and need to be compiled by running:
+### Package based
+The easiest way to install OASIS is using `pip`:  
+```
+pip install oasis-deconv
+```
+However, you won't have the examples provided in the GitHub repo.
+
+### Compile from source
+Alternatively you can clone the repo
+```
+git clone git@github.com:j-friedrich/OASIS.git
+cd OASIS
+```
+and install the requirements either using `pip`:   
+`pip install -r requirements.txt`   
+or if you are using `conda` (or `mamba`):  
+`conda install --file requirements.txt`  (or `mamba install --file requirements.txt`)
+
+For faster execution some functions have been written in Cython and need to be compiled by running:  
 `python setup.py build_ext --inplace`  
 (Ignore the warnings that Cython is using a deprecated Numpy API. Following the [cython online docs](http://docs.cython.org/en/latest/src/reference/compilation.html#configuring-the-c-build), for the time being, it is just a warning that you can ignore.)  
 (If the compilation fails on Windows, see Srikanth's [gist](https://gist.github.com/srikanthbojja/5c4205e37d28e1fb2b5b45e2e907b419).)
 
-To clean up temporary files follow it by:
+To clean up temporary files follow it by:  
 `python setup.py clean --all`
 
 ## Examples
 The scripts to produce the figures and table are in the subfolder 'examples' with names obvious from the PLoS Comput Biol paper. 
 They can be run with `ipython examples/fig[1-6].py`. 
 
-The results of fig4 and table1 will be even better than in the paper, because the version in the master branch includes later improvements, in patricularly up to an order of magnitude less computing time. The specific points in history marking the time of the publications have been tagged.
+The results of fig4 and table1 will be even better than in the paper, because the version in the master branch includes later improvements, in particularly up to an order of magnitude less computing time. The specific points in history marking the time of the publications have been tagged.
 
 To demonstrate how to use the methods on your own data, we included a demo jupyter notebook in the subfolder 'examples' as well. 
 
