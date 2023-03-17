@@ -24,9 +24,13 @@ Optionally, because not necessary for running our fast method on your own data, 
 
 ## Installation
 ### Package based
-The easiest way to install OASIS is using `pip`:  
+The easiest way to install OASIS is using either `pip`:  
 ```
 pip install oasis-deconv
+```
+or if you are using `conda` (or `mamba`):
+```
+conda install -c conda-forge oasis-deconv
 ```
 However, you won't have the examples provided in the GitHub repo.
 
