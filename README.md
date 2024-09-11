@@ -1,4 +1,4 @@
-[![CI](https://github.com/j-friedrich/OASIS/actions/workflows/ci.yml/badge.svg)](https://github.com/j-friedrich/OASIS/actions/workflows/ci.yml)
+[![CI](https://github.com/j-friedrich/OASIS/actions/workflows/tests.yml/badge.svg)](https://github.com/j-friedrich/OASIS/actions/workflows/tests.yml)
 
 # OASIS: Fast online deconvolution of calcium imaging data
 Tools for extracting the neural activity from fluorescence calcium imaging data &ensp;
@@ -8,7 +8,7 @@ The code can be readily run on neural temporal fluorescence calcium imaging data
 <p align="left"><img src="https://github.com/j-friedrich/OASIS/blob/master/examples/oasis_video.gif"  width="90%"></p>
 
 ## Requirements
-The scripts were tested on Linux and MacOS (some users successfully used Windows too) with a typical numerical/scientific Python 2.7 or 3.5-3.11 installation that included the following
+The scripts were tested on Linux and MacOS (some users successfully used Windows too) with a typical numerical/scientific Python 2.7 or 3.5-3.12 installation that included the following
 
 - python >= 2.7.11
 - matplotlib >= 1.5.1
