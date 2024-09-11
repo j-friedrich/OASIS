@@ -1,4 +1,4 @@
-[![CI](https://github.com/j-friedrich/OASIS/actions/workflows/ci.yml/badge.svg)](https://github.com/j-friedrich/OASIS/actions/workflows/ci.yml)
+[![CI](https://github.com/j-friedrich/OASIS/actions/workflows/tests.yml/badge.svg)](https://github.com/j-friedrich/OASIS/actions/workflows/tests.yml)
 
 # OASIS: Fast online deconvolution of calcium imaging data
 Tools for extracting the neural activity from fluorescence calcium imaging data &ensp;
