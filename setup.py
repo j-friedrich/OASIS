@@ -1,5 +1,5 @@
 # setup.py
-# run with:         python setup.py build_ext --inplace
+# run with:         python setup.py build_ext -i
 # clean up with:    python setup.py clean --all
 
 from Cython.Build import cythonize
@@ -21,10 +21,10 @@ ext_modules = [Extension("oasis.oasis_methods",
                          include_dirs=[np.get_include()],
                          language="c++")]
 
-setup(name='oasis-deconv',
-      version='0.2.0',
+setup(name='oasis',
+      version='0.2.1',
       author='Johannes Friedrich',
-      author_email='jfriedrich@flatironinstitute.org',
+      author_email='johannes.friedrich@alleninstitute.org',
       url='https://github.com/j-friedrich/OASIS',
       license='GPL-3',
       description='Fast algorithm for deconvolution of neural calcium imaging traces',
