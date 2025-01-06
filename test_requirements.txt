@@ -1,1 +1,3 @@
+cvxpy
+ecos
 nose2
