@@ -21,7 +21,7 @@ ext_modules = [Extension("oasis.oasis_methods",
                          include_dirs=[np.get_include()],
                          language="c++")]
 
-setup(name='oasis',
+setup(name='oasis-deconv',
       version='0.2.1',
       author='Johannes Friedrich',
       author_email='johannes.friedrich@alleninstitute.org',
