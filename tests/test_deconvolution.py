@@ -2,7 +2,7 @@ import numpy.testing as npt
 import numpy as np
 from math import exp
 from oasis.oasis_methods import oasisAR1, constrained_oasisAR1, oasisAR2, constrained_oasisAR2
-from oasis.functions import gen_data, deconvolve, foopsi, constrained_foopsi, onnls, constrained_onnlsAR2, tau_to_ar1, tau_to_ar2
+from oasis.functions import gen_data, deconvolve, foopsi, constrained_foopsi, onnls, constrained_onnlsAR2, tau_to_ar1, tau_to_ar2, ar1_to_tau, ar2_to_tau
 
 
 def AR1(constrained=False):
@@ -115,3 +115,18 @@ def test_tau_to_ar2():
     r = exp(-1. / (tau_r * framerate))
     npt.assert_allclose(g1, d + r)
     npt.assert_allclose(g2, -d * r)
+
+
+def test_ar1_to_tau_roundtrip():
+    framerate = 30.
+    tau_d = 1.0
+    npt.assert_allclose(ar1_to_tau(tau_to_ar1(tau_d, framerate), framerate), tau_d)
+
+
+def test_ar2_to_tau_roundtrip():
+    framerate = 30.
+    tau_d, tau_r = 1.0, 0.1
+    g1, g2 = tau_to_ar2(tau_d, tau_r, framerate)
+    tau_d_hat, tau_r_hat = ar2_to_tau(g1, g2, framerate)
+    npt.assert_allclose(tau_d_hat, tau_d)
+    npt.assert_allclose(tau_r_hat, tau_r)

@@ -54,6 +54,53 @@ def tau_to_ar2(tau_d, tau_r, framerate):
     return [d + r, -d * r]
 
 
+def ar1_to_tau(g, framerate):
+    """Convert AR(1) parameter g to exponential decay time constant.
+
+    Inverse of tau_to_ar1.
+
+    Parameters
+    ----------
+    g : float
+        AR(1) parameter.
+    framerate : float
+        Imaging rate in Hz.
+
+    Returns
+    -------
+    tau_d : float
+        Decay time constant in seconds.
+    """
+    return -1. / (log(g) * framerate)
+
+
+def ar2_to_tau(g1, g2, framerate):
+    """Convert AR(2) parameters [g1, g2] to decay and rise time constants.
+
+    Inverse of tau_to_ar2.
+
+    Parameters
+    ----------
+    g1 : float
+        First AR(2) parameter.
+    g2 : float
+        Second AR(2) parameter.
+    framerate : float
+        Imaging rate in Hz.
+
+    Returns
+    -------
+    tau_d : float
+        Decay time constant in seconds.
+    tau_r : float
+        Rise time constant in seconds.
+    """
+    tmp = sqrt(g1 ** 2 + 4 * g2) / 2
+    tau_d = -1. / (log(g1 / 2 + tmp) * framerate)
+    tau_r = -1. / (log(g1 / 2 - tmp) * framerate)
+    return tau_d, tau_r
+
+
 def gen_data(g=None, sn=.3, T=3000, framerate=30, firerate=.5, b=0, N=20, seed=13):
     """
     Generate data from homogenous Poisson Process
@@ -149,9 +196,9 @@ def gen_sinusoidal_data(g=None, sn=.3, T=3000, framerate=30, firerate=.5, b=0, N
     return Y, truth, trueSpikes
 
 
-def deconvolve(y, g=(None,), sn=None, b=None, b_nonneg=True,
-               optimize_g=0, penalty=0, tau_d=None, tau_r=None,
-               framerate=None, **kwargs):
+def deconvolve(y, tau_d=None, tau_r=None, framerate=None,
+               g=(None,), sn=None, b=None, b_nonneg=True,
+               optimize_g=0, penalty=1, **kwargs):
     """Infer the most likely discretized spike train underlying an fluorescence trace
 
     Solves the noise constrained sparse non-negative deconvolution problem
@@ -176,8 +223,6 @@ def deconvolve(y, g=(None,), sn=None, b=None, b_nonneg=True,
     optimize_g : int, optional, default 0
         Number of large, isolated events to consider for optimizing g.
         If optimize_g=0 the provided or estimated g is not further optimized.
-    penalty : int, optional, default 1
-        Sparsity penalty. 1: min |s|_1  0: min |s|_0
     tau_d : float, optional, default None
         Decay time constant in seconds. If provided, g is derived from tau_d
         (and tau_r if given) instead of being estimated or passed directly.
@@ -187,6 +232,8 @@ def deconvolve(y, g=(None,), sn=None, b=None, b_nonneg=True,
         AR(2) model is used. Requires framerate.
     framerate : float, optional, default None
         Imaging rate in Hz. Required when tau_d is provided.
+    penalty : int, optional, default 1
+        Sparsity penalty. 1: min |s|_1  0: min |s|_0
     kwargs : dict
         Further keywords passed on to constrained_oasisAR1 or constrained_onnlsAR2.
 
@@ -215,13 +262,14 @@ def deconvolve(y, g=(None,), sn=None, b=None, b_nonneg=True,
     else:
         raise TypeError("Input trace should be a np.double")
 
-    if g[0] is None or sn is None:
+    if g[0] is None:
         fudge_factor = .97 if (optimize_g and len(g) == 1) else .98
         est = estimate_parameters(y, p=len(g), fudge_factor=fudge_factor)
-        if g[0] is None:
-            g = est[0]
+        g = est[0]
         if sn is None:
             sn = est[1]
+    elif sn is None:
+        sn = GetSn(y)
     if len(g) == 1:
         return constrained_oasisAR1(y, g[0], sn, optimize_b=True if b is None else False,
                                     b_nonneg=b_nonneg, optimize_g=optimize_g,
