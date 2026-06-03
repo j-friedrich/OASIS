@@ -3,7 +3,10 @@ an active set method for sparse nonnegative deconvolution
 @author: Johannes Friedrich
 """
 
+import warnings
 import numpy as np
+warnings.filterwarnings("ignore", category=UserWarning, module=r"cvxpy")
+warnings.filterwarnings("ignore", category=DeprecationWarning, module=r"cvxpy")
 from matplotlib import pyplot as plt
 from oasis import oasisAR1, oasisAR2
 try:
