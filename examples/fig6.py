@@ -98,7 +98,7 @@ l2, = plt.plot([0, 1], [-1, -1], lw=3, c='k', marker='x',
 ax = plt.gca().add_artist(first_legend)
 # Create another legend for the second line.
 plt.legend(handles=[l1, l2], frameon=False, loc=(.05, .01), title='Correlation with')
-plt.subplots_adjust(.14, .185, .975, .96)
+plt.subplots_adjust(.16, .21, .975, .96)
 plt.show()
 
 
@@ -139,7 +139,7 @@ l2, = plt.plot([0, 1], [-1, -1], lw=3, c='k', marker='x',
 ax = plt.gca().add_artist(first_legend)
 # Create another legend for the second line.
 plt.legend(handles=[l1, l2], frameon=False, loc=(.05, .01), title='Correlation with')
-plt.subplots_adjust(.14, .185, .975, .96)
+plt.subplots_adjust(.16, .21, .975, .96)
 plt.show()
 
 
