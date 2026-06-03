@@ -7,7 +7,7 @@ Created on Mon Apr 4 18:21:13 2016
 import numpy as np
 cimport numpy as np
 cimport cython
-from libc.math cimport sqrt, log, exp, fmax, fabs
+from libc.math cimport sqrt, log, exp, fmax, fabs, isnan
 from scipy.optimize import fminbound, minimize
 from cpython cimport bool
 from libcpp.vector cimport vector
@@ -75,11 +75,13 @@ def oasisAR1(np.ndarray[DOUBLE, ndim=1] y, DOUBLE g, DOUBLE lam=0, DOUBLE s_min=
         t += 1
         i += 1
         while (i > 0 and  # backtrack until violations fixed
-               (P[i-1].v / P[i-1].w * exp(lg*P[i-1].l) + s_min > P[i].v / P[i].w)):
+               (isnan(P[i].v) or
+                P[i-1].v / P[i-1].w * exp(lg*P[i-1].l) + s_min > P[i].v / P[i].w)):
             i -= 1
-            # merge two pools
-            P[i].v += P[i+1].v * exp(lg*P[i].l)
-            P[i].w += P[i+1].w * exp(lg*2*P[i].l)
+            # merge two pools; NaN frames contribute no signal, only length
+            if not isnan(P[i+1].v):
+                P[i].v += P[i+1].v * exp(lg*P[i].l)
+                P[i].w += P[i+1].w * exp(lg*2*P[i].l)
             P[i].l += P[i+1].l
             P.pop_back()
     # construct c
@@ -95,6 +97,11 @@ def oasisAR1(np.ndarray[DOUBLE, ndim=1] y, DOUBLE g, DOUBLE lam=0, DOUBLE s_min=
     s = c.copy()
     s[0] = 0
     s[1:] -= g * c[:-1]
+    # propagate NaNs back to output
+    for t in range(T):
+        if isnan(y[t]):
+            c[t] = float('nan')
+            s[t] = float('nan')
     return c, s
 
 

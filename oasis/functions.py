@@ -8,13 +8,53 @@ from scipy.optimize import minimize, curve_fit
 try:
     import cvxpy as cvx
     cvxpy_installed = True
-except:
+except ImportError:
     cvxpy_installed = False
-    warn("Could not find cvxpy. Don't worry, you can still use OASIS, " +
-         "just not the slower interior point methods we compared to in the papers.")
 
 
-def gen_data(g=[.95], sn=.3, T=3000, framerate=30, firerate=.5, b=0, N=20, seed=13):
+def tau_to_ar1(tau_d, framerate):
+    """Convert exponential decay time constant to AR(1) parameter g.
+
+    Parameters
+    ----------
+    tau_d : float
+        Decay time constant in seconds.
+    framerate : float
+        Imaging rate in Hz.
+
+    Returns
+    -------
+    g : float
+        AR(1) parameter such that the impulse response decays as exp(-t/tau_d).
+    """
+    return exp(-1. / (tau_d * framerate))
+
+
+def tau_to_ar2(tau_d, tau_r, framerate):
+    """Convert decay and rise time constants to AR(2) parameters [g1, g2].
+
+    The Ca response kernel is modelled as exp(-t/tau_d) - exp(-t/tau_r).
+
+    Parameters
+    ----------
+    tau_d : float
+        Decay time constant in seconds.
+    tau_r : float
+        Rise time constant in seconds.
+    framerate : float
+        Imaging rate in Hz.
+
+    Returns
+    -------
+    g : list of float, length 2
+        AR(2) parameters [g1, g2].
+    """
+    d = exp(-1. / (tau_d * framerate))
+    r = exp(-1. / (tau_r * framerate))
+    return [d + r, -d * r]
+
+
+def gen_data(g=None, sn=.3, T=3000, framerate=30, firerate=.5, b=0, N=20, seed=13):
     """
     Generate data from homogenous Poisson Process
 
@@ -47,8 +87,9 @@ def gen_data(g=[.95], sn=.3, T=3000, framerate=30, firerate=.5, b=0, N=20, seed=
         Spike trains.
     """
 
+    if g is None:
+        g = [.95]
     np.random.seed(seed)
-    Y = np.zeros((N, T))
     trueSpikes = np.random.rand(N, T) < firerate / float(framerate)
     truth = trueSpikes.astype(float)
     for i in range(2, T):
@@ -60,7 +101,7 @@ def gen_data(g=[.95], sn=.3, T=3000, framerate=30, firerate=.5, b=0, N=20, seed=
     return Y, truth, trueSpikes
 
 
-def gen_sinusoidal_data(g=[.95], sn=.3, T=3000, framerate=30, firerate=.5, b=0, N=20, seed=13):
+def gen_sinusoidal_data(g=None, sn=.3, T=3000, framerate=30, firerate=.5, b=0, N=20, seed=13):
     """
     Generate data from inhomogenous Poisson Process with sinusoidal instantaneous activity
 
@@ -93,8 +134,9 @@ def gen_sinusoidal_data(g=[.95], sn=.3, T=3000, framerate=30, firerate=.5, b=0, 
         Spike trains.
     """
 
+    if g is None:
+        g = [.95]
     np.random.seed(seed)
-    Y = np.zeros((N, T))
     trueSpikes = np.random.rand(N, T) < firerate / float(framerate) * \
         np.sin(np.arange(T) // 50)**3 * 4
     truth = trueSpikes.astype(float)

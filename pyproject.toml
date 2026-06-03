@@ -1,3 +1,35 @@
 [build-system]
-requires = ["setuptools", "wheel", "numpy", "Cython"]
-build-backend = "setuptools.build_meta"
+requires = ["hatchling", "hatch-cython", "Cython", "numpy"]
+build-backend = "hatchling.build"
+
+[project]
+name = "oasis-deconv"
+dynamic = ["version"]
+description = "Fast algorithm for deconvolution of neural calcium imaging traces"
+readme = "README.md"
+license = { text = "GPL-3.0" }
+authors = [{ name = "Johannes Friedrich", email = "johannes.friedrich@alleninstitute.org" }]
+urls = { Homepage = "https://github.com/j-friedrich/OASIS" }
+requires-python = ">=3.8"
+dependencies = ["numpy", "scipy", "matplotlib", "Cython"]
+
+[project.optional-dependencies]
+test = ["pytest", "numpy"]
+
+[tool.hatch.version]
+path = "oasis/__init__.py"
+
+[tool.hatch.build.targets.wheel]
+packages = ["oasis"]
+
+[tool.hatch.build.hooks.cython]
+dependencies = ["hatch-cython", "Cython", "numpy"]
+
+[tool.hatch.build.hooks.cython.options]
+include_numpy = true
+language = "c++"
+compile_args = ["-O2"]
+directives = { cdivision = true }
+
+[[tool.hatch.build.hooks.cython.options.files]]
+sources = ["oasis/oasis_methods.pyx"]

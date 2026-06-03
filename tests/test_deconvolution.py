@@ -1,7 +1,8 @@
 import numpy.testing as npt
 import numpy as np
+from math import exp
 from oasis.oasis_methods import oasisAR1, constrained_oasisAR1, oasisAR2, constrained_oasisAR2
-from oasis.functions import gen_data, foopsi, constrained_foopsi, onnls, constrained_onnlsAR2
+from oasis.functions import gen_data, foopsi, constrained_foopsi, onnls, constrained_onnlsAR2, tau_to_ar1, tau_to_ar2
 
 
 def AR1(constrained=False):
@@ -46,3 +47,38 @@ def test_AR2():
 
 def test_constrainedAR2():
     AR2(True)
+
+
+def test_oasisAR1_nan():
+    g = .95
+    y, c, s = [a[0] for a in gen_data([g], sn=.3, N=1)]
+    c_clean, s_clean = oasisAR1(y, g, lam=2.4)
+    # introduce NaNs and check result matches on non-NaN frames
+    y_nan = y.copy()
+    nan_mask = np.zeros(len(y), dtype=bool)
+    nan_mask[10:20] = True
+    y_nan[nan_mask] = np.nan
+    c_nan, s_nan = oasisAR1(y_nan, g, lam=2.4)
+    assert np.all(np.isnan(c_nan[nan_mask]))
+    assert np.all(np.isnan(s_nan[nan_mask]))
+    assert np.all(np.isfinite(c_nan[~nan_mask]))
+    # without NaNs the result should be identical
+    c2, s2 = oasisAR1(y, g, lam=2.4)
+    npt.assert_array_equal(c2, c_clean)
+
+
+def test_tau_to_ar1():
+    framerate = 30.
+    tau_d = 1.0
+    g = tau_to_ar1(tau_d, framerate)
+    npt.assert_allclose(g, exp(-1. / (tau_d * framerate)))
+
+
+def test_tau_to_ar2():
+    framerate = 30.
+    tau_d, tau_r = 1.0, 0.1
+    g1, g2 = tau_to_ar2(tau_d, tau_r, framerate)
+    d = exp(-1. / (tau_d * framerate))
+    r = exp(-1. / (tau_r * framerate))
+    npt.assert_allclose(g1, d + r)
+    npt.assert_allclose(g2, -d * r)
