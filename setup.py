@@ -22,7 +22,7 @@ ext_modules = [Extension("oasis.oasis_methods",
                          language="c++")]
 
 setup(name='oasis-deconv',
-      version='0.2.1',
+      version='0.3.0',
       author='Johannes Friedrich',
       author_email='johannes.friedrich@alleninstitute.org',
       url='https://github.com/j-friedrich/OASIS',

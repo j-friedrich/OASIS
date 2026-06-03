@@ -26,10 +26,9 @@ packages = ["oasis"]
 dependencies = ["hatch-cython", "Cython", "numpy"]
 
 [tool.hatch.build.hooks.cython.options]
+src = "oasis"
 include_numpy = true
+compile_py = false
 language = "c++"
 compile_args = ["-O2"]
 directives = { cdivision = true }
-
-[[tool.hatch.build.hooks.cython.options.files]]
-sources = ["oasis/oasis_methods.pyx"]

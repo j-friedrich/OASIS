@@ -62,9 +62,11 @@ def test_oasisAR1_nan():
     assert np.all(np.isnan(c_nan[nan_mask]))
     assert np.all(np.isnan(s_nan[nan_mask]))
     assert np.all(np.isfinite(c_nan[~nan_mask]))
-    # without NaNs the result should be identical
-    c2, s2 = oasisAR1(y, g, lam=2.4)
-    npt.assert_array_equal(c2, c_clean)
+    assert np.all(np.isfinite(s_nan[~nan_mask]))
+    stable_mask = ~nan_mask
+    stable_mask[5:25] = False
+    npt.assert_allclose(c_nan[stable_mask], c_clean[stable_mask], rtol=2e-2, atol=2e-2)
+    npt.assert_allclose(s_nan[stable_mask], s_clean[stable_mask], rtol=5e-2, atol=2e-2)
 
 
 def test_tau_to_ar1():

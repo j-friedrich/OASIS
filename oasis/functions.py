@@ -237,7 +237,7 @@ if cvxpy_installed:
             Sparsity penalty parameter.
         b : float, optional, default 0
             Baseline.
-        solver: string, optional, default 'ECOS'
+        solver: string, optional, default 'CLARABEL'
             Solver to use. Can be chosen from CLARABEL, ECOS, SCS, CVXOPT, GUROBI,
             if installed.
 
@@ -282,7 +282,7 @@ if cvxpy_installed:
             Estimated noise level.
         b : float, optional, default 0
             Baseline.
-        solver: string, optional, default 'ECOS'
+        solver: string, optional, default 'CLARABEL'
             Solver to use. Can be chosen from CLARABEL, ECOS, SCS, CVXOPT, GUROBI,
             if installed.
 

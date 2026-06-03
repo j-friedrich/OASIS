@@ -7,6 +7,9 @@ on:
     branches: [ master ]
   workflow_dispatch:
 
+permissions:
+  contents: read
+
 jobs:
   build:
     runs-on: ${{ matrix.os }}
@@ -29,8 +32,8 @@ jobs:
           python -m pip install --upgrade pip
           pip install numpy scipy matplotlib Cython setuptools cvxpy pytest
 
-      - name: Compile
-        run: python setup.py build_ext -i
+      - name: Install package
+        run: pip install .
 
       - name: Lint
         run: |
@@ -38,6 +41,4 @@ jobs:
           flake8 . --count --select=E9,F63,F7,F82 --show-source --statistics
 
       - name: Test
-        env:
-          PYTHONPATH: ${{ github.workspace }}
         run: pytest tests/ -v
