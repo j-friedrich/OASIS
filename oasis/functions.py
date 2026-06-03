@@ -220,7 +220,7 @@ def deconvolve(y, g=(None,), sn=None, b=None, b_nonneg=True,
 
 
 if cvxpy_installed:
-    def foopsi(y, g, lam=0, b=0, solver='ECOS'):
+    def foopsi(y, g, lam=0, b=0, solver='CLARABEL'):
         # """Solves the penalized deconvolution problem using the cvxpy package.
         """ Infer the most likely discretized spike train underlying an AR(1) fluorescence trace
 
@@ -238,7 +238,7 @@ if cvxpy_installed:
         b : float, optional, default 0
             Baseline.
         solver: string, optional, default 'ECOS'
-            Solvers to be used. Can be choosen between ECOS, SCS, CVXOPT and GUROBI,
+            Solver to use. Can be chosen from CLARABEL, ECOS, SCS, CVXOPT, GUROBI,
             if installed.
 
         Returns:
@@ -269,7 +269,7 @@ if cvxpy_installed:
         c = np.squeeze(np.asarray(c.value))
         return c, s
 
-    def constrained_foopsi(y, g, sn, b=0, solver='ECOS'):
+    def constrained_foopsi(y, g, sn, b=0, solver='CLARABEL'):
         """Solves the noise constrained deconvolution problem using the cvxpy package.
 
         Parameters:
@@ -283,7 +283,7 @@ if cvxpy_installed:
         b : float, optional, default 0
             Baseline.
         solver: string, optional, default 'ECOS'
-            Solvers to be used. Can be choosen between ECOS, SCS, CVXOPT and GUROBI,
+            Solver to use. Can be chosen from CLARABEL, ECOS, SCS, CVXOPT, GUROBI,
             if installed.
 
         Returns:
