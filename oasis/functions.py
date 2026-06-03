@@ -6,7 +6,7 @@ import scipy
 import scipy.signal
 from scipy.optimize import curve_fit, minimize
 
-from oasis import constrained_oasisAR1, oasisAR1
+from oasis.oasis_methods import constrained_oasisAR1, oasisAR1
 
 try:
     import cvxpy as cvx
