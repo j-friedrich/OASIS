@@ -1,4 +1,4 @@
-# isort: skip_file
+# ruff: noqa: I001
 from . import oasis_methods
 from .oasis_methods import constrained_oasisAR1, constrained_oasisAR2, oasisAR1, oasisAR2
 from . import functions
