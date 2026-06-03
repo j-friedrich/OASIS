@@ -2,7 +2,7 @@ import numpy.testing as npt
 import numpy as np
 from math import exp
 from oasis.oasis_methods import oasisAR1, constrained_oasisAR1, oasisAR2, constrained_oasisAR2
-from oasis.functions import gen_data, foopsi, constrained_foopsi, onnls, constrained_onnlsAR2, tau_to_ar1, tau_to_ar2
+from oasis.functions import gen_data, deconvolve, foopsi, constrained_foopsi, onnls, constrained_onnlsAR2, tau_to_ar1, tau_to_ar2
 
 
 def AR1(constrained=False):
@@ -67,6 +67,37 @@ def test_oasisAR1_nan():
     stable_mask[5:25] = False
     npt.assert_allclose(c_nan[stable_mask], c_clean[stable_mask], rtol=2e-2, atol=2e-2)
     npt.assert_allclose(s_nan[stable_mask], s_clean[stable_mask], rtol=5e-2, atol=2e-2)
+
+
+def test_deconvolve_tau_d():
+    """deconvolve with tau_d should give same result as passing g directly."""
+    framerate = 30.
+    tau_d = 1.0
+    g = tau_to_ar1(tau_d, framerate)
+    y, c, s = [a[0] for a in gen_data([g], sn=.3, N=1)]
+    r1 = deconvolve(y, g=(g,))
+    r2 = deconvolve(y, tau_d=tau_d, framerate=framerate)
+    npt.assert_array_equal(r1[0], r2[0])
+    npt.assert_array_equal(r1[1], r2[1])
+
+
+def test_deconvolve_tau_d_tau_r():
+    """deconvolve with tau_d + tau_r should give same result as passing g directly."""
+    framerate = 30.
+    tau_d, tau_r = 1.0, 0.1
+    g = tau_to_ar2(tau_d, tau_r, framerate)
+    y, c, s = [a[0] for a in gen_data(g, sn=.3, N=1, seed=3)]
+    r1 = deconvolve(y, g=tuple(g))
+    r2 = deconvolve(y, tau_d=tau_d, tau_r=tau_r, framerate=framerate)
+    npt.assert_array_equal(r1[0], r2[0])
+    npt.assert_array_equal(r1[1], r2[1])
+
+
+def test_deconvolve_tau_d_requires_framerate():
+    import pytest
+    y, c, s = [a[0] for a in gen_data(N=1)]
+    with pytest.raises(ValueError, match="framerate"):
+        deconvolve(y, tau_d=1.0)
 
 
 def test_tau_to_ar1():

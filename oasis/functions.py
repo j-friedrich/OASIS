@@ -150,7 +150,8 @@ def gen_sinusoidal_data(g=None, sn=.3, T=3000, framerate=30, firerate=.5, b=0, N
 
 
 def deconvolve(y, g=(None,), sn=None, b=None, b_nonneg=True,
-               optimize_g=0, penalty=0, **kwargs):
+               optimize_g=0, penalty=0, tau_d=None, tau_r=None,
+               framerate=None, **kwargs):
     """Infer the most likely discretized spike train underlying an fluorescence trace
 
     Solves the noise constrained sparse non-negative deconvolution problem
@@ -164,6 +165,7 @@ def deconvolve(y, g=(None,), sn=None, b=None, b_nonneg=True,
     g : tuple of float, optional, default (None,)
         Parameters of the autoregressive model, cardinality equivalent to p.
         Estimated from the autocovariance of the data if no value is given.
+        Ignored if tau_d is provided.
     sn : float, optional, default None
         Standard deviation of the noise distribution.  If no value is given,
         then sn is estimated from the data based on power spectral density if not provided.
@@ -176,6 +178,15 @@ def deconvolve(y, g=(None,), sn=None, b=None, b_nonneg=True,
         If optimize_g=0 the provided or estimated g is not further optimized.
     penalty : int, optional, default 1
         Sparsity penalty. 1: min |s|_1  0: min |s|_0
+    tau_d : float, optional, default None
+        Decay time constant in seconds. If provided, g is derived from tau_d
+        (and tau_r if given) instead of being estimated or passed directly.
+        Requires framerate.
+    tau_r : float, optional, default None
+        Rise time constant in seconds. If provided together with tau_d, an
+        AR(2) model is used. Requires framerate.
+    framerate : float, optional, default None
+        Imaging rate in Hz. Required when tau_d is provided.
     kwargs : dict
         Further keywords passed on to constrained_oasisAR1 or constrained_onnlsAR2.
 
@@ -192,6 +203,13 @@ def deconvolve(y, g=(None,), sn=None, b=None, b_nonneg=True,
     lam: float
         Optimal Lagrange multiplier for noise constraint under L1 penalty
     """
+    if tau_d is not None:
+        if framerate is None:
+            raise ValueError("framerate is required when tau_d is provided")
+        if tau_r is not None:
+            g = tuple(tau_to_ar2(tau_d, tau_r, framerate))
+        else:
+            g = (tau_to_ar1(tau_d, framerate),)
     if np.can_cast(y.dtype,np.double,casting="safe"):
         y = y.astype(np.double)
     else:
