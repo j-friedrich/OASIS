@@ -104,7 +104,7 @@ def ar2_to_tau(g1, g2, framerate):
     return tau_d, tau_r
 
 
-def gen_data(g=None, sn=.3, T=3000, framerate=30, firerate=.5, b=0, N=20, seed=13):
+def gen_data(g=(.95,), sn=.3, T=3000, framerate=30, firerate=.5, b=0, N=20, seed=13):
     """
     Generate data from homogenous Poisson Process
 
@@ -137,8 +137,6 @@ def gen_data(g=None, sn=.3, T=3000, framerate=30, firerate=.5, b=0, N=20, seed=1
         Spike trains.
     """
 
-    if g is None:
-        g = [.95]
     np.random.seed(seed)
     trueSpikes = np.random.rand(N, T) < firerate / float(framerate)
     truth = trueSpikes.astype(float)
@@ -151,7 +149,7 @@ def gen_data(g=None, sn=.3, T=3000, framerate=30, firerate=.5, b=0, N=20, seed=1
     return Y, truth, trueSpikes
 
 
-def gen_sinusoidal_data(g=None, sn=.3, T=3000, framerate=30, firerate=.5, b=0, N=20, seed=13):
+def gen_sinusoidal_data(g=(.95,), sn=.3, T=3000, framerate=30, firerate=.5, b=0, N=20, seed=13):
     """
     Generate data from inhomogenous Poisson Process with sinusoidal instantaneous activity
 
@@ -184,8 +182,6 @@ def gen_sinusoidal_data(g=None, sn=.3, T=3000, framerate=30, firerate=.5, b=0, N
         Spike trains.
     """
 
-    if g is None:
-        g = [.95]
     np.random.seed(seed)
     trueSpikes = np.random.rand(N, T) < firerate / float(framerate) * \
         np.sin(np.arange(T) // 50)**3 * 4
