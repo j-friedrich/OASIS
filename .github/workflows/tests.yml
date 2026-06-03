@@ -29,10 +29,8 @@ jobs:
           python -m pip install --upgrade pip
           pip install numpy scipy matplotlib Cython setuptools cvxpy pytest
 
-      - name: Compile and install
-        run: |
-          python setup.py build_ext -i
-          pip install -e . --no-build-isolation
+      - name: Compile
+        run: python setup.py build_ext -i
 
       - name: Lint
         run: |
@@ -40,4 +38,6 @@ jobs:
           flake8 . --count --select=E9,F63,F7,F82 --show-source --statistics
 
       - name: Test
+        env:
+          PYTHONPATH: ${{ github.workspace }}
         run: pytest tests/ -v
