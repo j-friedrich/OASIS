@@ -1,10 +1,13 @@
+from math import exp, log, sqrt
+from warnings import warn
+
 import numpy as np
 import scipy
 import scipy.signal
-from math import sqrt, log, exp
+from scipy.optimize import curve_fit, minimize
+
 from oasis import constrained_oasisAR1, oasisAR1
-from warnings import warn
-from scipy.optimize import minimize, curve_fit
+
 try:
     import cvxpy as cvx
     cvxpy_installed = True
@@ -383,13 +386,13 @@ if cvxpy_installed:
         prob.solve(solver=solver)
         try:
             b = b.value
-        except:
+        except Exception:
             pass
         try:
             s = np.squeeze(np.asarray(G * c.value))
             s[0] = 0  # reflects merely initial calcium concentration
             c = np.squeeze(np.asarray(c.value))
-        except:
+        except Exception:
             s = None
         return c, s, b, g, prob.constraints[1].dual_value
 
@@ -447,7 +450,7 @@ def _nnls(KK, Ky, s=None, mask=None, tol=1e-9, max_iter=None):
         P[w] = True
         try:  # likely unnnecessary try-except-clause for robustness sake
             mu = np.linalg.inv(KK[P][:, P]).dot(Ky[P])
-        except:
+        except Exception:
             mu = np.linalg.inv(KK[P][:, P] + tol * np.eye(P.sum())).dot(Ky[P])
             print(r'added $\epsilon$I to avoid singularity')
         while len(mu > 0) and min(mu) < 0:
@@ -456,7 +459,7 @@ def _nnls(KK, Ky, s=None, mask=None, tol=1e-9, max_iter=None):
             P[s <= tol] = False
             try:
                 mu = np.linalg.inv(KK[P][:, P]).dot(Ky[P])
-            except:
+            except Exception:
                 mu = np.linalg.inv(KK[P][:, P] + tol * np.eye(P.sum())).dot(Ky[P])
                 print(r'added $\epsilon$I to avoid singularity')
         s[P] = mu.copy()
@@ -714,7 +717,7 @@ def constrained_onnlsAR2(y, g, sn, optimize_b=True, b_nonneg=True, optimize_g=0,
             cc = RSS - thresh
             try:
                 dlam = (-bb + sqrt(bb * bb - aa * cc)) / aa
-            except:
+            except Exception:
                 dlam = -bb / aa
             # perform shift
             lam += dlam / f_lam
@@ -722,7 +725,6 @@ def constrained_onnlsAR2(y, g, sn, optimize_b=True, b_nonneg=True, optimize_g=0,
 
             # update g
             if optimize_g and (not g_converged):
-                lengths = np.where(s)[0][1:] - np.where(s)[0][:-1]
 
                 def getRSS(y, opt):
                     ld, lr = opt
@@ -768,7 +770,7 @@ def constrained_onnlsAR2(y, g, sn, optimize_b=True, b_nonneg=True, optimize_g=0,
             cc = RSS - thresh
             try:
                 db = (-bb + sqrt(bb * bb - aa * cc)) / aa
-            except:
+            except Exception:
                 db = -bb / aa
             # perform shift
             if b_nonneg:
@@ -783,7 +785,6 @@ def constrained_onnlsAR2(y, g, sn, optimize_b=True, b_nonneg=True, optimize_g=0,
 
             # update g and b
             if optimize_g and (not g_converged):
-                lengths = np.where(s)[0][1:] - np.where(s)[0][:-1]
 
                 def getRSS(y, opt):
                     b, ld, lr = opt
@@ -850,7 +851,8 @@ def constrained_onnlsAR2(y, g, sn, optimize_b=True, b_nonneg=True, optimize_g=0,
 
 # functions to estimate AR coefficients and sn from
 # https://github.com/agiovann/Constrained_NMF.git
-def estimate_parameters(y, p=2, range_ff=[0.25, 0.5], method='mean', lags=10, fudge_factor=1., nonlinear_fit=False):
+def estimate_parameters(y, p=2, range_ff=[0.25, 0.5], method='mean', lags=10,
+                        fudge_factor=1., nonlinear_fit=False):
     """
     Estimate noise standard deviation and AR coefficients
 
@@ -911,7 +913,8 @@ def estimate_time_constant(y, p=2, sn=None, lags=10, fudge_factor=1., nonlinear_
         if p == 1:
             def func(x, a, g):
                 return a * g**x
-            popt, pcov = curve_fit(func, list(range(len(xc))), xc, (xc[0], g1)) #, bounds=(0, [3 * xc[0], 1]))
+            popt, pcov = curve_fit(func, list(range(len(xc))), xc, (xc[0], g1))
+            # bounds=(0, [3 * xc[0], 1]))
             return popt[1:2] * fudge_factor
         elif p == 2:
             def func(x, a, d, r):

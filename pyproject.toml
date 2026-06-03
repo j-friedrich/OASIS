@@ -32,3 +32,11 @@ compile_py = false
 language = "c++"
 compile_args = ["-O2"]
 directives = { cdivision = true }
+
+[tool.ruff]
+line-length = 100
+exclude = ["examples/"]
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "W"]
+ignore = ["E741"]

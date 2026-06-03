@@ -1,8 +1,21 @@
-import numpy.testing as npt
-import numpy as np
 from math import exp
-from oasis.oasis_methods import oasisAR1, constrained_oasisAR1, oasisAR2, constrained_oasisAR2
-from oasis.functions import gen_data, deconvolve, foopsi, constrained_foopsi, onnls, constrained_onnlsAR2, tau_to_ar1, tau_to_ar2, ar1_to_tau, ar2_to_tau
+
+import numpy as np
+import numpy.testing as npt
+from oasis.oasis_methods import constrained_oasisAR1, constrained_oasisAR2, oasisAR1, oasisAR2
+
+from oasis.functions import (
+    ar1_to_tau,
+    ar2_to_tau,
+    constrained_foopsi,
+    constrained_onnlsAR2,
+    deconvolve,
+    foopsi,
+    gen_data,
+    onnls,
+    tau_to_ar1,
+    tau_to_ar2,
+)
 
 
 def AR1(constrained=False):
