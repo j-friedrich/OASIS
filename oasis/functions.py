@@ -921,8 +921,8 @@ def estimate_time_constant(y, p=2, sn=None, lags=10, fudge_factor=1., nonlinear_
             return np.array([d + r, -d * r])
 
     xc = xc[:, np.newaxis]
-    A = scipy.linalg.toeplitz(xc[np.arange(lags)],
-                              xc[np.arange(p)]) - sn**2 * np.eye(lags, p)
+    A = scipy.linalg.toeplitz(xc[np.arange(lags)].ravel(),
+                              xc[np.arange(p)].ravel()) - sn**2 * np.eye(lags, p)
     g = np.linalg.lstsq(A, xc[1:], rcond=None)[0]
     gr = np.roots(np.concatenate([np.array([1]), -g.flatten()]))
     gr = (gr + gr.conjugate()) / 2.
