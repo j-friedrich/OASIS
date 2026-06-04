@@ -955,8 +955,16 @@ def GetSn(y, range_ff=[0.25, 0.5], method='mean'):
     sn : noise standard deviation
     """
 
+    # Drop NaN frames before spectral estimation; the Nyquist bin (ff == 0.5),
+    # most affected by discontinuities at segment joins, is already excluded
+    # by the strict ff < range_ff[1] comparison below.
+    if np.any(np.isnan(y)):
+        y = y[~np.isnan(y)]
     ff, Pxx = scipy.signal.welch(y)
     ind1 = ff > range_ff[0]
+    # Strict < (not <=) intentionally excludes the Nyquist bin (ff == 0.5):
+    # dropping NaN frames concatenates segments and creates discontinuities
+    # whose energy concentrates at the highest resolvable frequency.
     ind2 = ff < range_ff[1]
     ind = np.logical_and(ind1, ind2)
     Pxx_ind = Pxx[ind]
