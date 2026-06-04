@@ -86,6 +86,10 @@ def ar1_to_tau(g: float, framerate: float) -> float:
     tau_d : float
         Decay time constant in seconds.
     """
+    if g <= 0:
+        raise ValueError(f"g must be positive, got {g}")
+    if g == 1:
+        return float('inf')
     return -1. / (log(g) * framerate)
 
 
@@ -110,11 +114,16 @@ def ar2_to_tau(g1: float, g2: float, framerate: float) -> tuple[float, float]:
     tau_r : float
         Rise time constant in seconds.
     """
-    tmp = sqrt(g1 ** 2 + 4 * g2) / 2
+    disc = g1 ** 2 + 4 * g2
+    if disc < 0:
+        raise ValueError(
+            f"AR(2) parameters give complex roots (g1²+4g2={disc:.4g} < 0). "
+            "The impulse response is oscillatory, not a bi-exponential.")
+    tmp = sqrt(disc) / 2
     tau_d = -1. / (log(g1 / 2 + tmp) * framerate)
     tau_r = -1. / (log(g1 / 2 - tmp) * framerate)
-    # Note: if g1/2 - tmp is near zero or negative (degenerate AR(2) with very
-    # fast rise, unresolvable at this framerate), tau_r will be near zero or nan.
+    # Note: if g1/2 - tmp is near zero (degenerate AR(2) with very fast rise,
+    # unresolvable at this framerate), tau_r will be near zero or inf.
     # In that case the AR(2) has effectively collapsed to AR(1).
     return tau_d, tau_r
 
@@ -989,6 +998,8 @@ def GetSn(y: np.ndarray, range_ff: list = [0.25, 0.5], method: str = 'mean') -> 
     # by the strict ff < range_ff[1] comparison below.
     if np.any(np.isnan(y)):
         y = y[~np.isnan(y)]
+    if len(y) == 0:
+        raise ValueError("Cannot estimate noise: all frames are NaN.")
     ff, Pxx = scipy.signal.welch(y)
     ind1 = ff > range_ff[0]
     # Strict < (not <=) intentionally excludes the Nyquist bin (ff == 0.5):
