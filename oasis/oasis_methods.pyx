@@ -63,7 +63,7 @@ def oasisAR1(np.ndarray[DOUBLE, ndim=1] y, DOUBLE g, DOUBLE lam=0, DOUBLE s_min=
     lg = log(g)
     T = len(y)
     # [value, weight, start time, length] of pool
-    newpool.v, newpool.w, newpool.t, newpool.l = y[0] - lam * (1 - g), 1, 0, 1
+    newpool.v, newpool.w, newpool.t, newpool.l = (0 if isnan(y[0]) else y[0] - lam * (1 - g)), 1, 0, 1  # seed with 0 if first sample is NaN
     P.push_back(newpool)
     i = 0  # index of last pool
     t = 1  # number of time points added = index of next data point

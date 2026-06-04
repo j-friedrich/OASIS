@@ -71,22 +71,23 @@ def test_constrainedAR2():
 
 def test_oasisAR1_nan():
     g = .95
-    y, c, s = [a[0] for a in gen_data([g], sn=.3, N=1)]
+    y = gen_data([g], sn=.3, N=1)[0][0]
     c_clean, s_clean = oasisAR1(y, g, lam=2.4)
-    # introduce NaNs and check result matches on non-NaN frames
+    # introduce NaNs in the middle
     y_nan = y.copy()
     nan_mask = np.zeros(len(y), dtype=bool)
     nan_mask[10:20] = True
     y_nan[nan_mask] = np.nan
     c_nan, s_nan = oasisAR1(y_nan, g, lam=2.4)
+    # NaN frames propagate to output
     assert np.all(np.isnan(c_nan[nan_mask]))
     assert np.all(np.isnan(s_nan[nan_mask]))
+    # non-NaN frames are finite
     assert np.all(np.isfinite(c_nan[~nan_mask]))
     assert np.all(np.isfinite(s_nan[~nan_mask]))
     # clean data must produce bit-identical results (NaN path must not affect clean input)
-    c2, s2 = oasisAR1(y, g, lam=2.4)
-    npt.assert_array_equal(c2, c_clean)
-    npt.assert_array_equal(s2, s_clean)
+    npt.assert_array_equal(oasisAR1(y, g, lam=2.4)[0], c_clean)
+    npt.assert_array_equal(oasisAR1(y, g, lam=2.4)[1], s_clean)
 
 
 def test_deconvolve_tau_d():
@@ -94,7 +95,7 @@ def test_deconvolve_tau_d():
     framerate = 30.
     tau_d = 1.0
     g = tau_to_ar1(tau_d, framerate)
-    y, c, s = [a[0] for a in gen_data([g], sn=.3, N=1)]
+    y = gen_data([g], sn=.3, N=1)[0][0]
     r1 = deconvolve(y, g=(g,))
     r2 = deconvolve(y, tau_d=tau_d, framerate=framerate)
     npt.assert_array_equal(r1[0], r2[0])
@@ -106,7 +107,7 @@ def test_deconvolve_tau_d_tau_r():
     framerate = 30.
     tau_d, tau_r = 1.0, 0.1
     g = tau_to_ar2(tau_d, tau_r, framerate)
-    y, c, s = [a[0] for a in gen_data(g, sn=.3, N=1, seed=3)]
+    y = gen_data(g, sn=.3, N=1, seed=3)[0][0]
     r1 = deconvolve(y, g=tuple(g))
     r2 = deconvolve(y, tau_d=tau_d, tau_r=tau_r, framerate=framerate)
     npt.assert_array_equal(r1[0], r2[0])
@@ -114,10 +115,15 @@ def test_deconvolve_tau_d_tau_r():
 
 
 def test_deconvolve_tau_d_requires_framerate():
-    import pytest
-    y, c, s = [a[0] for a in gen_data(N=1)]
+    y = gen_data(N=1)[0][0]
     with pytest.raises(ValueError, match="framerate"):
         deconvolve(y, tau_d=1.0)
+
+
+def test_deconvolve_tau_r_requires_tau_d():
+    y = gen_data(N=1)[0][0]
+    with pytest.raises(ValueError, match="tau_d"):
+        deconvolve(y, tau_r=0.1, framerate=30.)
 
 
 def test_tau_to_ar1():

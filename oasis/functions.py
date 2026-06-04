@@ -249,6 +249,8 @@ def deconvolve(y, tau_d=None, tau_r=None, framerate=None,
     lam: float
         Optimal Lagrange multiplier for noise constraint under L1 penalty
     """
+    if tau_r is not None and tau_d is None:
+        raise ValueError("tau_d is required when tau_r is provided")
     if tau_d is not None:
         if framerate is None:
             raise ValueError("framerate is required when tau_d is provided")
