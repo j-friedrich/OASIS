@@ -4,8 +4,15 @@
 
 ### New features
 
-- **NaN handling in `oasisAR1`**: NaN frames are now handled transparently.
-  The API is unchanged — clean data produces bit-identical results.
+- **NaN handling in `oasisAR1`, `constrained_oasisAR1`, and `oasisAR1_f32`**:
+  NaN frames are treated as missing observations — the AR model bridges over
+  gaps without contributing to the objective, and NaN frames are propagated to
+  the output. The API is unchanged — clean data produces bit-identical results.
+  When fluorescence is elevated after a gap, the inferred spike is placed at the
+  first observed frame after the gap.
+- **`GetSn` NaN fix**: noise estimation now drops NaN frames before computing
+  the Welch PSD. The Nyquist bin is excluded (strict `ff < 0.5`) to mitigate
+  high-frequency artifacts from segment-join discontinuities.
 - **Time constant ↔ AR parameter conversions**:
   - `tau_to_ar1(tau_d, framerate)` — decay time constant → AR(1) parameter g
   - `tau_to_ar2(tau_d, tau_r, framerate)` — decay + rise time constants → AR(2) parameters [g1, g2]
@@ -57,6 +64,11 @@
 - `framerate` defined early and reused throughout.
 - New cells demonstrating `tau_to_ar1/2`, `ar1/2_to_tau`, and the
   `deconvolve(tau_d=..., framerate=...)` API.
+- New NaN demo: 4 gaps of varying length (masking spikes, elevated Ca, baseline)
+  shown with both ℓ0 (`oasisAR1` + `s_min`) and ℓ1 (`deconvolve` + `penalty=1`).
+- Unified `plot_trace` function with explicit `y/c/s/b` arguments, `nan_gaps`
+  support, masked correlations via `np.ma.corrcoef`, and `plt.vlines` for
+  ground truth spikes.
 
 ### Example scripts
 
