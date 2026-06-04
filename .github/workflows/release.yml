@@ -25,11 +25,13 @@ jobs:
           CIBW_BUILD: "cp38-* cp39-* cp310-* cp311-* cp312-* cp313-*"
           CIBW_SKIP: "*-musllinux*"
           CIBW_BEFORE_BUILD: "pip install Cython numpy hatch-cython"
+        with:
+          output-dir: /tmp/wheelhouse
 
       - uses: actions/upload-artifact@v4
         with:
           name: wheels-${{ matrix.os }}
-          path: ./wheelhouse/*.whl
+          path: /tmp/wheelhouse/*.whl
 
   build_sdist:
     name: Build source distribution
