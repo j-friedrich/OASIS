@@ -108,6 +108,9 @@ def ar2_to_tau(g1: float, g2: float, framerate: float) -> tuple[float, float]:
     tmp = sqrt(g1 ** 2 + 4 * g2) / 2
     tau_d = -1. / (log(g1 / 2 + tmp) * framerate)
     tau_r = -1. / (log(g1 / 2 - tmp) * framerate)
+    # Note: if g1/2 - tmp is near zero or negative (degenerate AR(2) with very
+    # fast rise, unresolvable at this framerate), tau_r will be near zero or nan.
+    # In that case the AR(2) has effectively collapsed to AR(1).
     return tau_d, tau_r
 
 
