@@ -22,6 +22,8 @@ def tau_to_ar1(tau_d: float, framerate: float) -> float:
 
     Note: tau_d is in seconds. Some other tools use tau in frames;
     to convert, pass framerate=1 and tau_d in frames.
+    If the literature reports half-decay time t½ instead of tau_d,
+    convert via tau_d = t½ / ln(2).
 
     Parameters
     ----------
@@ -44,6 +46,9 @@ def tau_to_ar2(tau_d: float, tau_r: float, framerate: float) -> list[float]:
     The Ca response kernel is modelled as exp(-t/tau_d) - exp(-t/tau_r).
     Note: tau_d and tau_r are in seconds. Some other tools use tau in frames;
     to convert, pass framerate=1 and tau values in frames.
+    If the literature reports half-decay time t½, convert via tau_d = t½ / ln(2).
+    The time to peak of the kernel is
+    tau_d * tau_r / (tau_d - tau_r) * ln(tau_d / tau_r).
 
     Parameters
     ----------
