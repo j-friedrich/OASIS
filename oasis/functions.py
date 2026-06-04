@@ -862,6 +862,7 @@ def constrained_onnlsAR2(y: np.ndarray, g: list | tuple, sn: float, optimize_b: 
         i = len(spikesizes) // 2
         l = 0
         u = len(spikesizes) - 1
+        res0 = c  # fallback if binary search never enters the l=i branch
         while u - l > 1:
             s_min = spikesizes[i]
             tmp = c4smin(y - b, s, s_min)
