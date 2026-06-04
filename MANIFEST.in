@@ -1,5 +1,0 @@
-include README.md
-include LICENSE
-include requirements.txt
-include test_requirements.txt
-include oasis/oasis_methods.pyx
