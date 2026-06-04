@@ -168,7 +168,9 @@ def constrained_oasisAR1(np.ndarray[DOUBLE, ndim=1] y, DOUBLE g, DOUBLE sn,
 
     lg = log(g)
     T = len(y)
-    thresh = sn * sn * T
+    obs = ~np.isnan(y)
+    T_eff = int(obs.sum())
+    thresh = sn * sn * T_eff
     if decimate > 1:  # parameter changes due to downsampling
         fluor = y.copy()
         y = y.reshape(-1, decimate).mean(1)
@@ -190,8 +192,8 @@ def constrained_oasisAR1(np.ndarray[DOUBLE, ndim=1] y, DOUBLE g, DOUBLE sn,
 
         lg = log(g)
         T = len(y)
-        # [value, weight, start time, length] of pool
-        newpool.v, newpool.w, newpool.t, newpool.l = y[0], 1, 0, 1
+        # [value, weight, start time, length] of pool; seed with 0 if first sample is NaN
+        newpool.v, newpool.w, newpool.t, newpool.l = (0 if isnan(y[0]) else y[0]), 1, 0, 1
         P.push_back(newpool)
         i = 0  # index of last pool
         t = 1  # number of time points added = index of next data point
@@ -202,11 +204,13 @@ def constrained_oasisAR1(np.ndarray[DOUBLE, ndim=1] y, DOUBLE g, DOUBLE sn,
             t += 1
             i += 1
             while (i > 0 and  # backtrack until violations fixed
-                   (P[i-1].v / P[i-1].w * exp(lg*P[i-1].l) > P[i].v / P[i].w)):
+                   (isnan(P[i].v) or
+                    P[i-1].v / P[i-1].w * exp(lg*P[i-1].l) > P[i].v / P[i].w)):
                 i -= 1
-                # merge two pools
-                P[i].v += P[i+1].v * exp(lg*P[i].l)
-                P[i].w += P[i+1].w * exp(lg*2*P[i].l)
+                # merge two pools; NaN frames contribute no signal, only length
+                if not isnan(P[i+1].v):
+                    P[i].v += P[i+1].v * exp(lg*P[i].l)
+                    P[i].w += P[i+1].w * exp(lg*2*P[i].l)
                 P[i].l += P[i+1].l
                 P.pop_back()
         # construct c
@@ -229,11 +233,13 @@ def constrained_oasisAR1(np.ndarray[DOUBLE, ndim=1] y, DOUBLE g, DOUBLE sn,
         while i < P.size() - 1:
             i += 1
             while (i > 0 and  # backtrack until violations fixed
-                   (P[i-1].v / P[i-1].w * exp(lg*P[i-1].l) > P[i].v / P[i].w)):
+                   (isnan(P[i].v) or
+                    P[i-1].v / P[i-1].w * exp(lg*P[i-1].l) > P[i].v / P[i].w)):
                 i -= 1
-                # merge two pools
-                P[i].v += P[i+1].v * exp(lg*P[i].l)
-                P[i].w += P[i+1].w * exp(lg*2*P[i].l)
+                # merge two pools; NaN frames contribute no signal, only length
+                if not isnan(P[i+1].v):
+                    P[i].v += P[i+1].v * exp(lg*P[i].l)
+                    P[i].w += P[i+1].w * exp(lg*2*P[i].l)
                 P[i].l += P[i+1].l
                 P.erase(P.begin() + i + 1)
         # construct c
@@ -251,7 +257,7 @@ def constrained_oasisAR1(np.ndarray[DOUBLE, ndim=1] y, DOUBLE g, DOUBLE sn,
         c, P = oasis1strun(y, g, c)
         tmp = np.empty(len(c))
         res = y - c
-        RSS = (res).dot(res)
+        RSS = res[obs].dot(res[obs])
         b = 0
         # until noise constraint is tight or spike train is empty
         while RSS < thresh * (1 - 1e-4) and c.sum() > 1e-9:
@@ -268,8 +274,8 @@ def constrained_oasisAR1(np.ndarray[DOUBLE, ndim=1] y, DOUBLE g, DOUBLE sn,
                     for j in range(P[i].l):
                         tmp[P[i].t + j] = aa
                         aa *= g
-            aa = tmp.dot(tmp)
-            bb = res.dot(tmp)
+            aa = tmp[obs].dot(tmp[obs])
+            bb = res[obs].dot(tmp[obs])
             cc = RSS - thresh
             dlam = (-bb + sqrt(bb * bb - aa * cc)) / aa
             lam += dlam
@@ -319,15 +325,15 @@ def constrained_oasisAR1(np.ndarray[DOUBLE, ndim=1] y, DOUBLE g, DOUBLE sn,
                 c, P = oasis(P, g, c)
             # calc RSS
             res = y - c
-            RSS = res.dot(res)
+            RSS = res[obs].dot(res[obs])
 
     else:  # optimize b and dependent on optimize_g g too
-        b = np.percentile(y, 15)  # initial estimate of baseline
+        b = np.nanpercentile(y, 15)  # initial estimate of baseline
         if b_nonneg:
             b = fmax(b, 0)
         c, P = oasis1strun(y - b, g, c)
         # update b and lam
-        db = fmax(np.mean(y - c), 0 if b_nonneg else -np.inf) - b
+        db = fmax(np.nanmean(y - c), 0 if b_nonneg else -np.inf) - b
         b += db
         lam -= db / (1 - g)
         # correct last pool
@@ -336,7 +342,7 @@ def constrained_oasisAR1(np.ndarray[DOUBLE, ndim=1] y, DOUBLE g, DOUBLE sn,
         c[P[i].t:P[i].t + P[i].l] = fmax(0, P[i].v) / P[i].w * h[:P[i].l]
         # calc RSS
         res = y - b - c
-        RSS = res.dot(res)
+        RSS = res[obs].dot(res[obs])
         tmp = np.empty(len(c))
         # until noise constraint is tight or spike train is empty or max_iter reached
         while fabs(RSS - thresh) > thresh * 1e-4 and c.sum() > 1e-9 and count < max_iter:
@@ -354,10 +360,10 @@ def constrained_oasisAR1(np.ndarray[DOUBLE, ndim=1] y, DOUBLE g, DOUBLE sn,
                     for j in range(P[i].l):
                         tmp[P[i].t + j] = aa
                         aa *= g
-            tmp -= 1. / T / (1 - g) * np.sum([(1 - exp(lg*P[i].l)) ** 2 / P[i].w
+            tmp -= 1. / T_eff / (1 - g) * np.sum([(1 - exp(lg*P[i].l)) ** 2 / P[i].w
                                               for i in range(P.size())])
-            aa = tmp.dot(tmp)
-            bb = res.dot(tmp)
+            aa = tmp[obs].dot(tmp[obs])
+            bb = res[obs].dot(tmp[obs])
             cc = RSS - thresh
             if bb * bb - aa * cc > 0:
                 dphi = (-bb + sqrt(bb * bb - aa * cc)) / aa
@@ -370,7 +376,7 @@ def constrained_oasisAR1(np.ndarray[DOUBLE, ndim=1] y, DOUBLE g, DOUBLE sn,
                 P[i].v -= dphi * (1 - exp(lg*P[i].l))
             c, P = oasis(P, g, c)
             # update b and lam
-            db = fmax(np.mean(y - c), 0 if b_nonneg else -np.inf) - b
+            db = fmax(np.nanmean(y - c), 0 if b_nonneg else -np.inf) - b
             b += db
             dlam = -db / (1 - g)
             lam += dlam
@@ -423,7 +429,7 @@ def constrained_oasisAR1(np.ndarray[DOUBLE, ndim=1] y, DOUBLE g, DOUBLE sn,
                 P[P.size() - 1].v -= lam * exp(lg*P[P.size() - 1].l)  # |s|_1 instead |c|_1
                 c, P = oasis(P, g, c)
                 # update b and lam
-                db = fmax(np.mean(y - c), 0 if b_nonneg else -np.inf) - b
+                db = fmax(np.nanmean(y - c), 0 if b_nonneg else -np.inf) - b
                 b += db
                 dlam = -db / (1 - g)
                 lam += dlam
@@ -434,7 +440,7 @@ def constrained_oasisAR1(np.ndarray[DOUBLE, ndim=1] y, DOUBLE g, DOUBLE sn,
 
             # calc RSS
             res = y - c - b
-            RSS = res.dot(res)
+            RSS = res[obs].dot(res[obs])
 
     if decimate > 1:  # deal with full data
         y = fluor
@@ -470,7 +476,7 @@ def constrained_oasisAR1(np.ndarray[DOUBLE, ndim=1] y, DOUBLE g, DOUBLE sn,
         pos = [P[i+1].t for i in np.argsort(lls)[::-1]]
         y = y - b
         res = -y
-        RSS = y.dot(y)
+        RSS = y[obs].dot(y[obs])
         c = np.zeros_like(y)
         P.resize(0)
         newpool.v, newpool.w, newpool.t, newpool.l = 0, 1, 0, len(y)
@@ -490,15 +496,18 @@ def constrained_oasisAR1(np.ndarray[DOUBLE, ndim=1] y, DOUBLE g, DOUBLE sn,
             for t in [i, i + 1]:
                 c[P[t].t:P[t].t + P[t].l] = fmax(0, P[t].v) / P[t].w * h[:P[t].l]
             # calc RSS
-            RSS -= res[j:j + k].dot(res[j:j + k])
+            RSS -= res[j:j + k][obs[j:j + k]].dot(res[j:j + k][obs[j:j + k]])
             res[P[i].t:j + k] = c[P[i].t:j + k] - y[P[i].t:j + k]
-            RSS += res[P[i].t:j + k].dot(res[P[i].t:j + k])
+            RSS += res[P[i].t:j + k][obs[P[i].t:j + k]].dot(res[P[i].t:j + k][obs[P[i].t:j + k]])
             if RSS < thresh:
                 break
     # construct s
     s = c.copy()
     s[0] = 0
     s[1:] -= g * c[:-1]
+    # propagate NaNs back to output
+    c[~obs] = float('nan')
+    s[~obs] = float('nan')
     return c, s, b, g, lam
 
 
@@ -890,7 +899,7 @@ def constrained_oasisAR2(np.ndarray[DOUBLE, ndim=1] y, DOUBLE g1, DOUBLE g2, DOU
     #                 for a in np.where(tmp>1e-6)[0]])  # this window size seems necessary and sufficient
     #     ff = np.unique(ff[(ff >= 0) * (ff < T)])
         c, tmp = oasisAR2(y - b, g1, g2, lam=lam / (1 - g1 - g2))
-        db = fmax(np.mean(y - c), 0 if b_nonneg else -np.inf) - b
+        db = fmax(np.nanmean(y - c), 0 if b_nonneg else -np.inf) - b
         b += db
         lam -= db
         for i in range(max_iter - 1):
@@ -920,7 +929,7 @@ def constrained_oasisAR2(np.ndarray[DOUBLE, ndim=1] y, DOUBLE g1, DOUBLE g2, DOU
             # perform shift
             b += db
             c, tmp = oasisAR2(y - b, g1, g2, lam=lam / (1 - g1 - g2))
-            db = fmax(np.mean(y - c), 0 if b_nonneg else -np.inf) - b
+            db = fmax(np.nanmean(y - c), 0 if b_nonneg else -np.inf) - b
             b += db
             lam -= db
 
@@ -974,6 +983,8 @@ def constrained_oasisAR2(np.ndarray[DOUBLE, ndim=1] y, DOUBLE g1, DOUBLE g2, DOU
 # this is a bit faster for AR1, but somehow not for AR2, hence skipped that
 
 
+# TODO: refactor float32 variants (oasisAR1_f32, constrained_oasisAR1_f32) to use
+# Cython fused types to eliminate code duplication with the float64 versions.
 ctypedef np.float32_t SINGLE
 
 cdef struct Pool32:
@@ -1024,8 +1035,8 @@ def oasisAR1_f32(np.ndarray[SINGLE, ndim=1] y, SINGLE g, SINGLE lam=0, SINGLE s_
 
     lg = log(g)
     T = len(y)
-    # [value, weight, start time, length] of pool
-    newpool.v, newpool.w, newpool.t, newpool.l = y[0] - lam * (1 - g), 1, 0, 1
+    # [value, weight, start time, length] of pool; seed with 0 if first sample is NaN
+    newpool.v, newpool.w, newpool.t, newpool.l = (0 if isnan(y[0]) else y[0] - lam * (1 - g)), 1, 0, 1
     P.push_back(newpool)
     i = 0  # index of last pool
     t = 1  # number of time points added = index of next data point
@@ -1037,11 +1048,13 @@ def oasisAR1_f32(np.ndarray[SINGLE, ndim=1] y, SINGLE g, SINGLE lam=0, SINGLE s_
         t += 1
         i += 1
         while (i > 0 and  # backtrack until violations fixed
-               (P[i-1].v / P[i-1].w * exp(lg*P[i-1].l) + s_min > P[i].v / P[i].w)):
+               (isnan(P[i].v) or
+                P[i-1].v / P[i-1].w * exp(lg*P[i-1].l) + s_min > P[i].v / P[i].w)):
             i -= 1
-            # merge two pools
-            P[i].v += P[i+1].v * exp(lg*P[i].l)
-            P[i].w += P[i+1].w * exp(lg*2*P[i].l)
+            # merge two pools; NaN frames contribute no signal, only length
+            if not isnan(P[i+1].v):
+                P[i].v += P[i+1].v * exp(lg*P[i].l)
+                P[i].w += P[i+1].w * exp(lg*2*P[i].l)
             P[i].l += P[i+1].l
             P.pop_back()
     # construct c
@@ -1057,6 +1070,11 @@ def oasisAR1_f32(np.ndarray[SINGLE, ndim=1] y, SINGLE g, SINGLE lam=0, SINGLE s_
     s = c.copy()
     s[0] = 0
     s[1:] -= g * c[:-1]
+    # propagate NaNs back to output
+    for t in range(T):
+        if isnan(y[t]):
+            c[t] = float('nan')
+            s[t] = float('nan')
     return c, s
 
 
@@ -1278,12 +1296,12 @@ def constrained_oasisAR1_f32(np.ndarray[SINGLE, ndim=1] y, SINGLE g, SINGLE sn,
             RSS = res.dot(res)
 
     else:  # optimize b and dependent on optimize_g g too
-        b = np.percentile(y, 15)  # initial estimate of baseline
+        b = np.nanpercentile(y, 15)  # initial estimate of baseline
         if b_nonneg:
             b = fmax(b, 0)
         c, P = oasis1strun(y - b, g, c)
         # update b and lam
-        db = fmax(np.mean(y - c), 0 if b_nonneg else -np.inf) - b
+        db = fmax(np.nanmean(y - c), 0 if b_nonneg else -np.inf) - b
         b += db
         lam -= db / (1 - g)
         # correct last pool
@@ -1326,7 +1344,7 @@ def constrained_oasisAR1_f32(np.ndarray[SINGLE, ndim=1] y, SINGLE g, SINGLE sn,
                 P[i].v -= dphi * (1 - exp(lg*P[i].l))
             c, P = oasis(P, g, c)
             # update b and lam
-            db = fmax(np.mean(y - c), 0 if b_nonneg else -np.inf) - b
+            db = fmax(np.nanmean(y - c), 0 if b_nonneg else -np.inf) - b
             b += db
             dlam = -db / (1 - g)
             lam += dlam
@@ -1379,7 +1397,7 @@ def constrained_oasisAR1_f32(np.ndarray[SINGLE, ndim=1] y, SINGLE g, SINGLE sn,
                 P[P.size() - 1].v -= lam * exp(lg*P[P.size() - 1].l)  # |s|_1 instead |c|_1
                 c, P = oasis(P, g, c)
                 # update b and lam
-                db = fmax(np.mean(y - c), 0 if b_nonneg else -np.inf) - b
+                db = fmax(np.nanmean(y - c), 0 if b_nonneg else -np.inf) - b
                 b += db
                 dlam = -db / (1 - g)
                 lam += dlam

@@ -3,7 +3,14 @@ from math import exp
 import numpy as np
 import numpy.testing as npt
 import pytest
-from oasis.oasis_methods import constrained_oasisAR1, constrained_oasisAR2, oasisAR1, oasisAR2
+from oasis.oasis_methods import (
+    constrained_oasisAR1,
+    constrained_oasisAR1_f32,
+    constrained_oasisAR2,
+    oasisAR1,
+    oasisAR1_f32,
+    oasisAR2,
+)
 
 from oasis.functions import (
     ar1_to_tau,
@@ -90,6 +97,23 @@ def test_oasisAR1_nan():
     npt.assert_array_equal(oasisAR1(y, g, lam=2.4)[1], s_clean)
 
 
+@pytest.mark.skipif(not cvxpy_installed, reason="cvxpy not installed")
+def test_constrained_oasisAR1_nan():
+    g, sn = .95, .3
+    y = gen_data([g], sn=sn, N=1)[0][0]
+    c_clean, *_ = constrained_oasisAR1(y, g, sn)
+    y_nan = y.copy()
+    nan_mask = np.zeros(len(y), dtype=bool)
+    nan_mask[10:20] = True
+    y_nan[nan_mask] = np.nan
+    c_nan, s_nan, *_ = constrained_oasisAR1(y_nan, g, sn)
+    assert np.all(np.isnan(c_nan[nan_mask]))
+    assert np.all(np.isnan(s_nan[nan_mask]))
+    assert np.all(np.isfinite(c_nan[~nan_mask]))
+    # clean data must produce bit-identical results
+    npt.assert_array_equal(constrained_oasisAR1(y, g, sn)[0], c_clean)
+
+
 def test_deconvolve_tau_d():
     """deconvolve with tau_d should give same result as passing g directly."""
     framerate = 30.
@@ -141,6 +165,26 @@ def test_tau_to_ar2():
     r = exp(-1. / (tau_r * framerate))
     npt.assert_allclose(g1, d + r)
     npt.assert_allclose(g2, -d * r)
+
+
+def test_oasisAR1_f32():
+    """f32 results should be highly correlated with f64."""
+    g = .95
+    y = gen_data([g], sn=.3, N=1)[0][0]
+    c64, s64 = oasisAR1(y, g, lam=2.4)
+    c32, s32 = oasisAR1_f32(y.astype(np.float32), np.float32(g), lam=np.float32(2.4))
+    npt.assert_allclose(np.corrcoef(c32, c64)[0, 1], 1, 1e-5)
+    npt.assert_allclose(np.corrcoef(s32, s64)[0, 1], 1, 1e-3)
+
+
+@pytest.mark.skipif(not cvxpy_installed, reason="cvxpy not installed")
+def test_constrained_oasisAR1_f32():
+    """f32 results should be highly correlated with f64."""
+    g, sn = .95, .3
+    y = gen_data([g], sn=sn, N=1)[0][0]
+    c64, *_ = constrained_oasisAR1(y, g, sn)
+    c32, *_ = constrained_oasisAR1_f32(y.astype(np.float32), np.float32(g), np.float32(sn))
+    npt.assert_allclose(np.corrcoef(c32, c64)[0, 1], 1, 1e-4)
 
 
 def test_ar1_to_tau_roundtrip():
