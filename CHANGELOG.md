@@ -58,6 +58,24 @@
 - Suppressed noisy cvxpy `*`-operator deprecation warnings.
 - Added `__all__` to `oasis/__init__.py`.
 
+### API improvements
+
+- **Type hints** on all public functions in `functions.py` (`tau_to_ar1/2`,
+  `ar1/2_to_tau`, `gen_data`, `gen_sinusoidal_data`, `deconvolve`, `onnls`,
+  `constrained_onnlsAR2`, `estimate_parameters`, `estimate_time_constant`,
+  `GetSn`, `axcov`). Uses `from __future__ import annotations` for Python 3.8
+  compatibility.
+- **Numpy-style docstrings** throughout `functions.py` (removed colons from
+  section headers, fixed `string` → `str`, aligned parameter order).
+- **`tau_to_ar1/2` docstrings** note that `tau` is in seconds (some tools use
+  frames), include the half-decay conversion `tau_d = t½ / ln(2)`, and the
+  time-to-peak formula `tau_d * tau_r / (tau_d - tau_r) * ln(tau_d / tau_r)`.
+- **Input validation**:
+  - `ar1_to_tau`: raises `ValueError` for `g <= 0`; returns `inf` for `g == 1`.
+  - `ar2_to_tau`: raises `ValueError` with a clear message when `g1²+4g2 < 0`
+    (complex roots indicate an oscillatory, non-bi-exponential response).
+  - `GetSn`: raises `ValueError` when all input frames are NaN.
+
 ### Demo notebook
 
 - Updated kernel from python2 to python3.
