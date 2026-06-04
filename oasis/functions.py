@@ -20,6 +20,9 @@ except ImportError:
 def tau_to_ar1(tau_d: float, framerate: float) -> float:
     """Convert exponential decay time constant to AR(1) parameter g.
 
+    Note: tau_d is in seconds. Some other tools use tau in frames;
+    to convert, pass framerate=1 and tau_d in frames.
+
     Parameters
     ----------
     tau_d : float
@@ -39,6 +42,8 @@ def tau_to_ar2(tau_d: float, tau_r: float, framerate: float) -> list[float]:
     """Convert decay and rise time constants to AR(2) parameters [g1, g2].
 
     The Ca response kernel is modelled as exp(-t/tau_d) - exp(-t/tau_r).
+    Note: tau_d and tau_r are in seconds. Some other tools use tau in frames;
+    to convert, pass framerate=1 and tau values in frames.
 
     Parameters
     ----------
