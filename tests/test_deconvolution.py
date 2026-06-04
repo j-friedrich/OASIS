@@ -2,20 +2,23 @@ from math import exp
 
 import numpy as np
 import numpy.testing as npt
+import pytest
 from oasis.oasis_methods import constrained_oasisAR1, constrained_oasisAR2, oasisAR1, oasisAR2
 
 from oasis.functions import (
     ar1_to_tau,
     ar2_to_tau,
-    constrained_foopsi,
     constrained_onnlsAR2,
+    cvxpy_installed,
     deconvolve,
-    foopsi,
     gen_data,
     onnls,
     tau_to_ar1,
     tau_to_ar2,
 )
+
+if cvxpy_installed:
+    from oasis.functions import constrained_foopsi, foopsi
 
 
 def AR1(constrained=False):
@@ -30,10 +33,12 @@ def AR1(constrained=False):
     npt.assert_allclose(np.corrcoef(result[1], s)[0, 1], 1, .2)
 
 
+@pytest.mark.skipif(not cvxpy_installed, reason="cvxpy not installed")
 def test_AR1():
     AR1()
 
 
+@pytest.mark.skipif(not cvxpy_installed, reason="cvxpy not installed")
 def test_constrainedAR1():
     AR1(True)
 
@@ -54,10 +59,12 @@ def AR2(constrained=False):
     npt.assert_allclose(np.corrcoef(result2[1], s)[0, 1], 1, .2)
 
 
+@pytest.mark.skipif(not cvxpy_installed, reason="cvxpy not installed")
 def test_AR2():
     AR2()
 
 
+@pytest.mark.skipif(not cvxpy_installed, reason="cvxpy not installed")
 def test_constrainedAR2():
     AR2(True)
 
