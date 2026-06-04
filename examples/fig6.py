@@ -98,7 +98,7 @@ l2, = plt.plot([0, 1], [-1, -1], lw=3, c='k', marker='x',
 ax = plt.gca().add_artist(first_legend)
 # Create another legend for the second line.
 plt.legend(handles=[l1, l2], frameon=False, loc=(.05, .01), title='Correlation with')
-plt.subplots_adjust(.14, .185, .975, .96)
+plt.subplots_adjust(.16, .21, .975, .96)
 plt.show()
 
 
@@ -139,7 +139,7 @@ l2, = plt.plot([0, 1], [-1, -1], lw=3, c='k', marker='x',
 ax = plt.gca().add_artist(first_legend)
 # Create another legend for the second line.
 plt.legend(handles=[l1, l2], frameon=False, loc=(.05, .01), title='Correlation with')
-plt.subplots_adjust(.14, .185, .975, .96)
+plt.subplots_adjust(.16, .21, .975, .96)
 plt.show()
 
 
@@ -159,9 +159,8 @@ for i, tau in enumerate(tauls):
         plt.plot([q, q], [0, 1.15], color='gray', clip_on=False)
     l += [plt.plot(S[i], c=col[i], label=tau)[0]]
     if i < 5:
-        plt.xticks(range(0, 3000, 750), [''] * 4)
+        plt.xticks([])
         plt.xlim(0, 2000)
-        plt.gca().set_xticklabels([])
     simpleaxis(plt.gca())
     plt.yticks([0, 1], ['', ''])
     plt.ylim(0, 1.1)
@@ -170,8 +169,8 @@ plt.xlim(0, 2000)
 plt.yticks([0, 1], [0, 1])
 plt.xlabel('Time [s]', labelpad=-10)
 plt.ylabel('Inferred activity', y=3.2, labelpad=-2)
-plt.legend(handles=l, frameon=False, title='Lag', ncol=6, loc=(.2, 6.4))
-plt.text(.13, 6.5, 'Lag', horizontalalignment='center',
+plt.legend(handles=l, frameon=False, ncol=6, loc=(.2, 6.6))
+plt.text(.13, 6.7, 'Lag', horizontalalignment='center',
          verticalalignment='bottom', transform=ax.transAxes)
-plt.subplots_adjust(.05, .09, 1., .94, .08, .08)
+plt.subplots_adjust(.06, .12, .995, .92, .08, .12)
 plt.show()

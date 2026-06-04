@@ -3,11 +3,14 @@ an active set method for sparse nonnegative deconvolution
 @author: Johannes Friedrich
 """
 
+import warnings
 import numpy as np
+warnings.filterwarnings("ignore", category=UserWarning, module=r"cvxpy")
+warnings.filterwarnings("ignore", category=DeprecationWarning, module=r"cvxpy")
 import matplotlib.pyplot as plt
 from timeit import Timer
 from scipy.io import loadmat
-from scipy.ndimage.filters import percentile_filter
+from scipy.ndimage import percentile_filter
 from oasis import oasisAR1, constrained_oasisAR1, oasisAR2, constrained_oasisAR2
 try:  # python 2
     from exceptions import ImportError, IOError
@@ -28,7 +31,8 @@ col = ['#0072B2', '#009E73', '#D55E00', '#E69F00',
        '#56B4E9', '#CC79A7', '#F0E442', '#999999']
 # real data from Chen et al 2013, available at following URL
 # https://portal.nersc.gov/project/crcns/download/cai-1/GCaMP6s_9cells_Chen2013/processed_data.tar.gz
-filename = "/Users/joe/Downloads/data_20120627_cell2_002.mat"
+from pathlib import Path
+filename = Path.home() / "Downloads" / "data_20120627_cell2_002.mat"
 
 
 ################
@@ -45,7 +49,7 @@ result_oasis = oasisAR1(Y[0], g=g, lam=2.4)
 result_foopsi = foopsi(Y[0], g=[g], lam=2.4)
 
 fig = plt.figure(figsize=(20, 5.5))
-fig.add_axes([.038, .57, .96, .42])
+fig.add_axes([.048, .58, .947, .38])
 plt.plot(result_oasis[0], c=col[0], label='OASIS')
 plt.plot(result_foopsi[0], '--', c=col[6], label='CVXPY')
 plt.plot(trueC[0], c=col[2], label='Truth', zorder=-5)
@@ -58,7 +62,7 @@ plt.yticks([0, int(Y[0].max())], [0, int(Y[0].max())])
 plt.xticks(range(750, 3000, 750), [''] * 3)
 plt.ylabel('Fluor.')
 plt.xlim(0, 2000)
-fig.add_axes([.038, .13, .96, .42])
+fig.add_axes([.048, .17, .947, .38])
 plt.plot(result_oasis[1], c=col[0])
 plt.plot(result_foopsi[1], '--', c=col[6])
 plt.plot(trueSpikes[0], c=col[2], lw=1.5, zorder=-10)
@@ -84,7 +88,7 @@ result_oasis = oasisAR2(Y[0], g1=g[0], g2=g[1], lam=25)
 result_foopsi = foopsi(Y[0], g=np.array(g), lam=25)
 
 fig = plt.figure(figsize=(20, 5.5))
-fig.add_axes([.038, .57, .47, .42])
+fig.add_axes([.048, .58, .442, .38])
 plt.plot(result_oasis[0][150:1350], c=col[0], label='OASIS')
 plt.plot(result_foopsi[0][150:1350], '--', c=col[6], label='CVXPY')
 plt.plot(trueC[0][150:1350], c=col[2], label='Truth', zorder=-5)
@@ -97,7 +101,7 @@ plt.yticks([0, int(Y[0].max()) - 1], [0, int(Y[0].max()) - 1])
 plt.xticks(range(300, 1500, 300), [''] * 4)
 plt.ylabel('Fluor.')
 
-fig.add_axes([.038, .13, .47, .42])
+fig.add_axes([.048, .17, .442, .38])
 plt.plot(result_oasis[1][150:1350], c=col[0])
 plt.plot(result_foopsi[1][150:1350], '--', c=col[6])
 plt.plot(trueSpikes[0][150:1350], c=col[2], lw=1.5, zorder=-10)
@@ -140,7 +144,7 @@ try:
     c, s = foopsi(y - mu, g)[:2]
     # shift for sparsity, coincidentally the same mu
     result_oasis = oasisAR2(y - mu, g1=g[0], g2=g[1])
-    fig.add_axes([.53, .57, .47, .42])
+    fig.add_axes([.532, .58, .458, .38])
     plt.plot(t_frame[:2400], y[100:2500], c=col[7], alpha=.7, lw=1.5, clip_on=False)
     plt.plot(t_frame[:2400], result_oasis[0][100:2500], c=col[0], clip_on=False)
     plt.plot(t_frame[:2400], c[100:2500], '--', c=col[6], clip_on=False)
@@ -150,7 +154,7 @@ try:
     plt.yticks([])
     simpleaxis(plt.gca())
 
-    fig.add_axes([.53, .13, .47, .42])
+    fig.add_axes([.532, .17, .458, .38])
     for t in spike_time:
         plt.plot([t - 100. / 60, t - 100. / 60], [0, .2], c=col[2], lw=1.5)
     plt.plot(t_frame[:2400], result_oasis[1][100:2500], c=col[0])  # , alpha=.5)
@@ -217,7 +221,7 @@ constrained_ts['GUROBI'] = np.zeros(N) * np.nan  # GUROBI failed
 
 # plot
 fig = plt.figure(figsize=(7, 5))
-fig.add_axes([.14, .17, .79, .82])
+fig.add_axes([.17, .20, .76, .75])
 plt.errorbar(range(len(solvers)),
              [np.mean(ts[s]) for s in solvers],
              [np.std(ts[s]) / np.sqrt(N) for s in solvers], ls='',
@@ -230,11 +234,11 @@ plt.xticks(range(len(solvers)), solvers)
 plt.xlim(-.2, 4.2)
 plt.ylim(-.07, plt.ylim()[1])
 plt.yticks([0, .5, 1], [0, .5, 1.])
-# plt.xlabel('Solver')
+plt.xlabel('Solver')
 plt.ylabel('Time [s]', labelpad=-1, y=.52)
 
 simpleaxis(plt.gca())
-fig.add_axes([.3, .55, .38, .4])
+fig.add_axes([.33, .55, .38, .4])
 plt.semilogy(range(len(solvers)), [np.mean(ts[s]) for s in solvers], 'o', ms=8, c=col[0])
 plt.semilogy(range(len(solvers)), [np.mean(constrained_ts[s]) for s in solvers],
              'x', ms=8, mew=3, mec=col[1], c=col[1])
@@ -288,7 +292,7 @@ constrained_ts['GUROBI'] = np.zeros(N) * np.nan  # GUROBI failed
 
 # plot
 fig = plt.figure(figsize=(7, 5))
-fig.add_axes([.14, .17, .79, .82])
+fig.add_axes([.17, .20, .76, .75])
 plt.errorbar(range(len(solvers)),
              [np.mean(ts[s]) for s in solvers],
              [np.std(ts[s]) / np.sqrt(N) for s in solvers], ls='',
@@ -304,7 +308,7 @@ plt.yticks(*[[0, 1, 2]] * 2)
 plt.xlabel('Solver')
 plt.ylabel('Time [s]', y=.52, labelpad=12)
 simpleaxis(plt.gca())
-fig.add_axes([.3, .55, .38, .4])
+fig.add_axes([.33, .55, .38, .4])
 plt.semilogy(range(len(solvers)),
              [np.mean(ts[s]) for s in solvers], 'o', ms=8, c=col[0])
 plt.semilogy(range(len(solvers)),

@@ -122,13 +122,13 @@ lam = 0
 y = Y[n]
 g = .9
 g0 = g
-ax0, ax1 = .04, .17
+ax0, ax1 = .045, .175
 
 # plot initial result
 active_set = [[y[i], 1, [i, ]] for i in range(len(y))]
 solution, active_set = foo(active_set, g, 0)
 fig = plt.figure(figsize=(20, 10))
-ax = fig.add_axes([ax1, .87, 1 - ax1, .12])
+ax = fig.add_axes([ax1, .87, 0.995 - ax1, .12])
 plot_trace(n, True)
 
 # solve for lambda
@@ -164,12 +164,12 @@ plt.ylim(114, 138)
 plt.xlabel('$\lambda$', labelpad=-40, x=1.1)
 plt.ylabel('RSS', labelpad=-30, y=.42)
 # plot result after updating lambda, but before rerunning oasis to fix violations
-ax = fig.add_axes([ax1, .73, 1 - ax1, .12])
+ax = fig.add_axes([ax1, .73, 0.995 - ax1, .12])
 plot_trace(n)
 
 # plot result after rerunning oasis to fix violations
 solution, active_set = foo(active_set, g, ll)
-ax = fig.add_axes([ax1, .59, 1 - ax1, .12])
+ax = fig.add_axes([ax1, .59, 0.995 - ax1, .12])
 plot_trace(n)
 plt.ylabel('Fluorescence', y=0)
 
@@ -212,12 +212,12 @@ for a in active_set:
 for v, w, idx in a_s_tmp:
     solution[idx] = v / w * g**np.arange(len(idx))
 solution[solution < 0] = 0
-ax = fig.add_axes([ax1, .45, 1 - ax1, .12])
+ax = fig.add_axes([ax1, .45, 0.995 - ax1, .12])
 plot_trace(n)
 
 # plot result after rerunning oasis to fix violations
 solution, active_set = foo(active_set, g, ll)
-ax = fig.add_axes([ax1, .31, 1 - ax1, .12])
+ax = fig.add_axes([ax1, .31, 0.995 - ax1, .12])
 plot_trace(n)
 
 # do few more iterations
@@ -226,7 +226,7 @@ for _ in range(3):
     solution, active_set, g = update_g(y, active_set, g, lam)
 
 # plot converged results with comparison traces
-ax = fig.add_axes([ax1, .07, 1 - ax1, .12])
+ax = fig.add_axes([ax1, .09, 0.995 - ax1, .12])
 sol_given_g = constrained_oasisAR1(y, .95, sn)[0]
 estimated_g = estimate_parameters(y, p=1)[0][0]
 print('estimated gamma via autocorrelation: ', estimated_g)

@@ -1,20 +1,136 @@
+from __future__ import annotations
+
+from math import exp, log, sqrt
+from warnings import warn
+
 import numpy as np
 import scipy
 import scipy.signal
-from math import sqrt, log, exp
-from oasis import constrained_oasisAR1, oasisAR1
-from warnings import warn
-from scipy.optimize import minimize, curve_fit
+from scipy.optimize import curve_fit, minimize
+
+from oasis.oasis_methods import constrained_oasisAR1, oasisAR1
+
 try:
     import cvxpy as cvx
     cvxpy_installed = True
-except:
+except ImportError:
     cvxpy_installed = False
-    warn("Could not find cvxpy. Don't worry, you can still use OASIS, " +
-         "just not the slower interior point methods we compared to in the papers.")
 
 
-def gen_data(g=[.95], sn=.3, T=3000, framerate=30, firerate=.5, b=0, N=20, seed=13):
+def tau_to_ar1(tau_d: float, framerate: float) -> float:
+    """Convert exponential decay time constant to AR(1) parameter g.
+
+    Note: tau_d is in seconds. Some other tools use tau in frames;
+    to convert, pass framerate=1 and tau_d in frames.
+    If the literature reports half-decay time t½ instead of tau_d,
+    convert via tau_d = t½ / ln(2).
+
+    Parameters
+    ----------
+    tau_d : float
+        Decay time constant in seconds.
+    framerate : float
+        Imaging rate in Hz.
+
+    Returns
+    -------
+    g : float
+        AR(1) parameter such that the impulse response decays as exp(-t/tau_d).
+    """
+    return exp(-1. / (tau_d * framerate))
+
+
+def tau_to_ar2(tau_d: float, tau_r: float, framerate: float) -> list[float]:
+    """Convert decay and rise time constants to AR(2) parameters [g1, g2].
+
+    The Ca response kernel is modelled as exp(-t/tau_d) - exp(-t/tau_r).
+    Note: tau_d and tau_r are in seconds. Some other tools use tau in frames;
+    to convert, pass framerate=1 and tau values in frames.
+    If the literature reports half-decay time t½, convert via tau_d = t½ / ln(2).
+    The time to peak of the kernel is
+    tau_d * tau_r / (tau_d - tau_r) * ln(tau_d / tau_r).
+
+    Parameters
+    ----------
+    tau_d : float
+        Decay time constant in seconds.
+    tau_r : float
+        Rise time constant in seconds.
+    framerate : float
+        Imaging rate in Hz.
+
+    Returns
+    -------
+    g : list of float, length 2
+        AR(2) parameters [g1, g2].
+    """
+    d = exp(-1. / (tau_d * framerate))
+    r = exp(-1. / (tau_r * framerate))
+    return [d + r, -d * r]
+
+
+def ar1_to_tau(g: float, framerate: float) -> float:
+    """Convert AR(1) parameter g to exponential decay time constant.
+
+    Inverse of tau_to_ar1.
+
+    Parameters
+    ----------
+    g : float
+        AR(1) parameter.
+    framerate : float
+        Imaging rate in Hz.
+
+    Returns
+    -------
+    tau_d : float
+        Decay time constant in seconds.
+    """
+    if g <= 0:
+        raise ValueError(f"g must be positive, got {g}")
+    if g == 1:
+        return float('inf')
+    return -1. / (log(g) * framerate)
+
+
+def ar2_to_tau(g1: float, g2: float, framerate: float) -> tuple[float, float]:
+    """Convert AR(2) parameters [g1, g2] to decay and rise time constants.
+
+    Inverse of tau_to_ar2.
+
+    Parameters
+    ----------
+    g1 : float
+        First AR(2) parameter.
+    g2 : float
+        Second AR(2) parameter.
+    framerate : float
+        Imaging rate in Hz.
+
+    Returns
+    -------
+    tau_d : float
+        Decay time constant in seconds.
+    tau_r : float
+        Rise time constant in seconds.
+    """
+    disc = g1 ** 2 + 4 * g2
+    if disc < 0:
+        raise ValueError(
+            f"AR(2) parameters give complex roots (g1²+4g2={disc:.4g} < 0). "
+            "The impulse response is oscillatory, not a bi-exponential.")
+    tmp = sqrt(disc) / 2
+    tau_d = -1. / (log(g1 / 2 + tmp) * framerate)
+    tau_r = -1. / (log(g1 / 2 - tmp) * framerate)
+    # Note: if g1/2 - tmp is near zero (degenerate AR(2) with very fast rise,
+    # unresolvable at this framerate), tau_r will be near zero or inf.
+    # In that case the AR(2) has effectively collapsed to AR(1).
+    return tau_d, tau_r
+
+
+def gen_data(g: tuple = (.95,), sn: float = .3, T: int = 3000, framerate: float = 30,
+             firerate: float = .5, b: float = 0, N: int = 20, seed: int = 13,
+             ) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
     """
     Generate data from homogenous Poisson Process
 
@@ -48,7 +164,6 @@ def gen_data(g=[.95], sn=.3, T=3000, framerate=30, firerate=.5, b=0, N=20, seed=
     """
 
     np.random.seed(seed)
-    Y = np.zeros((N, T))
     trueSpikes = np.random.rand(N, T) < firerate / float(framerate)
     truth = trueSpikes.astype(float)
     for i in range(2, T):
@@ -60,7 +175,9 @@ def gen_data(g=[.95], sn=.3, T=3000, framerate=30, firerate=.5, b=0, N=20, seed=
     return Y, truth, trueSpikes
 
 
-def gen_sinusoidal_data(g=[.95], sn=.3, T=3000, framerate=30, firerate=.5, b=0, N=20, seed=13):
+def gen_sinusoidal_data(g: tuple = (.95,), sn: float = .3, T: int = 3000, framerate: float = 30,
+                        firerate: float = .5, b: float = 0, N: int = 20, seed: int = 13,
+                        ) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
     """
     Generate data from inhomogenous Poisson Process with sinusoidal instantaneous activity
 
@@ -94,7 +211,6 @@ def gen_sinusoidal_data(g=[.95], sn=.3, T=3000, framerate=30, firerate=.5, b=0, 
     """
 
     np.random.seed(seed)
-    Y = np.zeros((N, T))
     trueSpikes = np.random.rand(N, T) < firerate / float(framerate) * \
         np.sin(np.arange(T) // 50)**3 * 4
     truth = trueSpikes.astype(float)
@@ -107,38 +223,51 @@ def gen_sinusoidal_data(g=[.95], sn=.3, T=3000, framerate=30, firerate=.5, b=0, 
     return Y, truth, trueSpikes
 
 
-def deconvolve(y, g=(None,), sn=None, b=None, b_nonneg=True,
-               optimize_g=0, penalty=0, **kwargs):
-    """Infer the most likely discretized spike train underlying an fluorescence trace
+def deconvolve(y: np.ndarray, tau_d: float | None = None, tau_r: float | None = None,
+               framerate: float | None = None, g: tuple = (None,), sn: float | None = None,
+               b: float | None = None, b_nonneg: bool = True, optimize_g: int = 0,
+               penalty: int = 1, **kwargs,
+               ) -> tuple[np.ndarray, np.ndarray, float, tuple, float]:
+    """Infer the most likely discretized spike train underlying a fluorescence trace.
 
     Solves the noise constrained sparse non-negative deconvolution problem
     min |s|_q subject to |c-y|^2 = sn^2 T and s = Gc >= 0
     where q is either 1 or 0, rendering the problem convex or non-convex.
 
-    Parameters:
-    -----------
+    Parameters
+    ----------
     y : array, shape (T,)
         Fluorescence trace.
+    tau_d : float, optional, default None
+        Decay time constant in seconds. If provided, g is derived from tau_d
+        (and tau_r if given) instead of being estimated or passed directly.
+        Requires framerate.
+    tau_r : float, optional, default None
+        Rise time constant in seconds. If provided together with tau_d, an
+        AR(2) model is used. Requires framerate.
+    framerate : float, optional, default None
+        Imaging rate in Hz. Required when tau_d is provided.
     g : tuple of float, optional, default (None,)
         Parameters of the autoregressive model, cardinality equivalent to p.
         Estimated from the autocovariance of the data if no value is given.
+        Ignored if tau_d is provided.
     sn : float, optional, default None
-        Standard deviation of the noise distribution.  If no value is given,
-        then sn is estimated from the data based on power spectral density if not provided.
+        Standard deviation of the noise distribution. Estimated from the data
+        via power spectral density if not provided.
     b : float, optional, default None
-        Fluorescence baseline value. If no value is given, then b is optimized.
-    b_nonneg: bool, optional, default True
+        Fluorescence baseline value. Optimized if not provided.
+    b_nonneg : bool, optional, default True
         Enforce strictly non-negative baseline if True.
     optimize_g : int, optional, default 0
         Number of large, isolated events to consider for optimizing g.
         If optimize_g=0 the provided or estimated g is not further optimized.
     penalty : int, optional, default 1
         Sparsity penalty. 1: min |s|_1  0: min |s|_0
-    kwargs : dict
+    **kwargs : dict
         Further keywords passed on to constrained_oasisAR1 or constrained_onnlsAR2.
 
-    Returns:
-    --------
+    Returns
+    -------
     c : array, shape (T,)
         The inferred denoised fluorescence signal at each time-bin.
     s : array, shape (T,)
@@ -146,22 +275,32 @@ def deconvolve(y, g=(None,), sn=None, b=None, b_nonneg=True,
     b : float
         Fluorescence baseline value.
     g : tuple of float
-        Parameters of the AR(2) process that models the fluorescence impulse response.
-    lam: float
-        Optimal Lagrange multiplier for noise constraint under L1 penalty
+        Parameters of the AR process that models the fluorescence impulse response.
+    lam : float
+        Optimal Lagrange multiplier for noise constraint under L1 penalty.
     """
+    if tau_r is not None and tau_d is None:
+        raise ValueError("tau_d is required when tau_r is provided")
+    if tau_d is not None:
+        if framerate is None:
+            raise ValueError("framerate is required when tau_d is provided")
+        if tau_r is not None:
+            g = tuple(tau_to_ar2(tau_d, tau_r, framerate))
+        else:
+            g = (tau_to_ar1(tau_d, framerate),)
     if np.can_cast(y.dtype,np.double,casting="safe"):
         y = y.astype(np.double)
     else:
         raise TypeError("Input trace should be a np.double")
 
-    if g[0] is None or sn is None:
+    if g[0] is None:
         fudge_factor = .97 if (optimize_g and len(g) == 1) else .98
         est = estimate_parameters(y, p=len(g), fudge_factor=fudge_factor)
-        if g[0] is None:
-            g = est[0]
+        g = est[0]
         if sn is None:
             sn = est[1]
+    elif sn is None:
+        sn = GetSn(y)
     if len(g) == 1:
         return constrained_oasisAR1(y, g[0], sn, optimize_b=True if b is None else False,
                                     b_nonneg=b_nonneg, optimize_g=optimize_g,
@@ -178,15 +317,14 @@ def deconvolve(y, g=(None,), sn=None, b=None, b_nonneg=True,
 
 
 if cvxpy_installed:
-    def foopsi(y, g, lam=0, b=0, solver='ECOS'):
-        # """Solves the penalized deconvolution problem using the cvxpy package.
-        """ Infer the most likely discretized spike train underlying an AR(1) fluorescence trace
+    def foopsi(y, g, lam=0, b=0, solver='CLARABEL'):
+        """Infer the most likely discretized spike train underlying a fluorescence trace.
 
         Solves the sparse non-negative deconvolution problem
         min 1/2|c-y|^2 + lam |s|_1 subject to s=Gc>=0
 
-        Parameters:
-        -----------
+        Parameters
+        ----------
         y : array, shape (T,)
             Fluorescence trace.
         g : list of float
@@ -195,12 +333,12 @@ if cvxpy_installed:
             Sparsity penalty parameter.
         b : float, optional, default 0
             Baseline.
-        solver: string, optional, default 'ECOS'
-            Solvers to be used. Can be choosen between ECOS, SCS, CVXOPT and GUROBI,
+        solver : str, optional, default 'CLARABEL'
+            Solver to use. Can be chosen from CLARABEL, ECOS, SCS, CVXOPT, GUROBI,
             if installed.
 
-        Returns:
-        --------
+        Returns
+        -------
         c : array, shape (T,)
             The inferred denoised fluorescence signal at each time-bin.
         s : array, shape (T,)
@@ -227,11 +365,11 @@ if cvxpy_installed:
         c = np.squeeze(np.asarray(c.value))
         return c, s
 
-    def constrained_foopsi(y, g, sn, b=0, solver='ECOS'):
-        """Solves the noise constrained deconvolution problem using the cvxpy package.
+    def constrained_foopsi(y, g, sn, b=0, solver='CLARABEL'):
+        """Solve the noise constrained deconvolution problem using the cvxpy package.
 
-        Parameters:
-        -----------
+        Parameters
+        ----------
         y : array, shape (T,)
             Fluorescence trace.
         g : tuple of float
@@ -240,12 +378,12 @@ if cvxpy_installed:
             Estimated noise level.
         b : float, optional, default 0
             Baseline.
-        solver: string, optional, default 'ECOS'
-            Solvers to be used. Can be choosen between ECOS, SCS, CVXOPT and GUROBI,
+        solver : str, optional, default 'CLARABEL'
+            Solver to use. Can be chosen from CLARABEL, ECOS, SCS, CVXOPT, GUROBI,
             if installed.
 
-        Returns:
-        --------
+        Returns
+        -------
         c : array, shape (T,)
             The inferred denoised fluorescence signal at each time-bin.
         s : array, shape (T,)
@@ -253,9 +391,9 @@ if cvxpy_installed:
         b : float
             Fluorescence baseline value.
         g : tuple of float
-            Parameters of the AR(2) process that models the fluorescence impulse response.
-        lam: float
-            Optimal Lagrange multiplier for noise constraint
+            Parameters of the AR process that models the fluorescence impulse response.
+        lam : float
+            Optimal Lagrange multiplier for noise constraint.
         """
 
         T = y.size
@@ -275,13 +413,13 @@ if cvxpy_installed:
         prob.solve(solver=solver)
         try:
             b = b.value
-        except:
+        except Exception:
             pass
         try:
             s = np.squeeze(np.asarray(G * c.value))
             s[0] = 0  # reflects merely initial calcium concentration
             c = np.squeeze(np.asarray(c.value))
-        except:
+        except Exception:
             s = None
         return c, s, b, g, prob.constraints[1].dual_value
 
@@ -339,7 +477,7 @@ def _nnls(KK, Ky, s=None, mask=None, tol=1e-9, max_iter=None):
         P[w] = True
         try:  # likely unnnecessary try-except-clause for robustness sake
             mu = np.linalg.inv(KK[P][:, P]).dot(Ky[P])
-        except:
+        except Exception:
             mu = np.linalg.inv(KK[P][:, P] + tol * np.eye(P.sum())).dot(Ky[P])
             print(r'added $\epsilon$I to avoid singularity')
         while len(mu > 0) and min(mu) < 0:
@@ -348,7 +486,7 @@ def _nnls(KK, Ky, s=None, mask=None, tol=1e-9, max_iter=None):
             P[s <= tol] = False
             try:
                 mu = np.linalg.inv(KK[P][:, P]).dot(Ky[P])
-            except:
+            except Exception:
                 mu = np.linalg.inv(KK[P][:, P] + tol * np.eye(P.sum())).dot(Ky[P])
                 print(r'added $\epsilon$I to avoid singularity')
         s[P] = mu.copy()
@@ -360,7 +498,9 @@ def _nnls(KK, Ky, s=None, mask=None, tol=1e-9, max_iter=None):
     return tmp
 
 
-def onnls(y, g, lam=0, shift=100, window=None, mask=None, tol=1e-9, max_iter=None):
+def onnls(y: np.ndarray, g: list | tuple, lam: float = 0, shift: int = 100,
+          window: int | None = None, mask: np.ndarray | None = None,
+          tol: float = 1e-9, max_iter: int | None = None) -> tuple[np.ndarray, np.ndarray]:
     """ Infer the most likely discretized spike train underlying an AR(2) fluorescence trace
 
     Solves the sparse non-negative deconvolution problem
@@ -461,8 +601,11 @@ def onnls(y, g, lam=0, shift=100, window=None, mask=None, tol=1e-9, max_iter=Non
     return c, s
 
 
-def constrained_onnlsAR2(y, g, sn, optimize_b=True, b_nonneg=True, optimize_g=0, decimate=5,
-                         shift=100, window=None, tol=1e-9, max_iter=1, penalty=1):
+def constrained_onnlsAR2(y: np.ndarray, g: list | tuple, sn: float, optimize_b: bool = True,
+                         b_nonneg: bool = True, optimize_g: int = 0, decimate: int = 5,
+                         shift: int = 100, window: int | None = None, tol: float = 1e-9,
+                         max_iter: int = 1, penalty: int = 1,
+                         ) -> tuple[np.ndarray, np.ndarray, float, tuple, float]:
     """ Infer the most likely discretized spike train underlying an AR(2) fluorescence trace
 
     Solves the noise constrained sparse non-negative deconvolution problem
@@ -606,7 +749,7 @@ def constrained_onnlsAR2(y, g, sn, optimize_b=True, b_nonneg=True, optimize_g=0,
             cc = RSS - thresh
             try:
                 dlam = (-bb + sqrt(bb * bb - aa * cc)) / aa
-            except:
+            except Exception:
                 dlam = -bb / aa
             # perform shift
             lam += dlam / f_lam
@@ -614,7 +757,6 @@ def constrained_onnlsAR2(y, g, sn, optimize_b=True, b_nonneg=True, optimize_g=0,
 
             # update g
             if optimize_g and (not g_converged):
-                lengths = np.where(s)[0][1:] - np.where(s)[0][:-1]
 
                 def getRSS(y, opt):
                     ld, lr = opt
@@ -660,7 +802,7 @@ def constrained_onnlsAR2(y, g, sn, optimize_b=True, b_nonneg=True, optimize_g=0,
             cc = RSS - thresh
             try:
                 db = (-bb + sqrt(bb * bb - aa * cc)) / aa
-            except:
+            except Exception:
                 db = -bb / aa
             # perform shift
             if b_nonneg:
@@ -675,7 +817,6 @@ def constrained_onnlsAR2(y, g, sn, optimize_b=True, b_nonneg=True, optimize_g=0,
 
             # update g and b
             if optimize_g and (not g_converged):
-                lengths = np.where(s)[0][1:] - np.where(s)[0][:-1]
 
                 def getRSS(y, opt):
                     b, ld, lr = opt
@@ -742,7 +883,10 @@ def constrained_onnlsAR2(y, g, sn, optimize_b=True, b_nonneg=True, optimize_g=0,
 
 # functions to estimate AR coefficients and sn from
 # https://github.com/agiovann/Constrained_NMF.git
-def estimate_parameters(y, p=2, range_ff=[0.25, 0.5], method='mean', lags=10, fudge_factor=1., nonlinear_fit=False):
+def estimate_parameters(y: np.ndarray, p: int = 2, range_ff: list = [0.25, 0.5],
+                        method: str = 'mean', lags: int = 10,
+                        fudge_factor: float = 1., nonlinear_fit: bool = False,
+                        ) -> tuple[np.ndarray, float]:
     """
     Estimate noise standard deviation and AR coefficients
 
@@ -754,7 +898,7 @@ def estimate_parameters(y, p=2, range_ff=[0.25, 0.5], method='mean', lags=10, fu
         number of additional lags where he autocovariance is computed
     range_ff : (1,2) array, nonnegative, max value <= 0.5
         range of frequency (x Nyquist rate) over which the spectrum is averaged
-    method : string, optional, default 'mean'
+    method : str, optional, default 'mean'
         method of averaging: Mean, median, exponentiated mean of logvalues
     fudge_factor : float (0< fudge_factor <= 1)
         shrinkage factor to reduce bias
@@ -766,7 +910,9 @@ def estimate_parameters(y, p=2, range_ff=[0.25, 0.5], method='mean', lags=10, fu
     return g, sn
 
 
-def estimate_time_constant(y, p=2, sn=None, lags=10, fudge_factor=1., nonlinear_fit=False):
+def estimate_time_constant(y: np.ndarray, p: int = 2, sn: float | None = None,
+                           lags: int = 10, fudge_factor: float = 1.,
+                           nonlinear_fit: bool = False) -> np.ndarray:
     """
     Estimate AR model parameters through the autocovariance function
 
@@ -803,7 +949,8 @@ def estimate_time_constant(y, p=2, sn=None, lags=10, fudge_factor=1., nonlinear_
         if p == 1:
             def func(x, a, g):
                 return a * g**x
-            popt, pcov = curve_fit(func, list(range(len(xc))), xc, (xc[0], g1)) #, bounds=(0, [3 * xc[0], 1]))
+            popt, pcov = curve_fit(func, list(range(len(xc))), xc, (xc[0], g1))
+            # bounds=(0, [3 * xc[0], 1]))
             return popt[1:2] * fudge_factor
         elif p == 2:
             def func(x, a, d, r):
@@ -814,8 +961,8 @@ def estimate_time_constant(y, p=2, sn=None, lags=10, fudge_factor=1., nonlinear_
             return np.array([d + r, -d * r])
 
     xc = xc[:, np.newaxis]
-    A = scipy.linalg.toeplitz(xc[np.arange(lags)],
-                              xc[np.arange(p)]) - sn**2 * np.eye(lags, p)
+    A = scipy.linalg.toeplitz(xc[np.arange(lags)].ravel(),
+                              xc[np.arange(p)].ravel()) - sn**2 * np.eye(lags, p)
     g = np.linalg.lstsq(A, xc[1:], rcond=None)[0]
     gr = np.roots(np.concatenate([np.array([1]), -g.flatten()]))
     gr = (gr + gr.conjugate()) / 2.
@@ -827,7 +974,7 @@ def estimate_time_constant(y, p=2, sn=None, lags=10, fudge_factor=1., nonlinear_
     return g.flatten()
 
 
-def GetSn(y, range_ff=[0.25, 0.5], method='mean'):
+def GetSn(y: np.ndarray, range_ff: list = [0.25, 0.5], method: str = 'mean') -> float:
     """
     Estimate noise power through the power spectral density over the range of large frequencies
 
@@ -838,7 +985,7 @@ def GetSn(y, range_ff=[0.25, 0.5], method='mean'):
         one entry per time-bin.
     range_ff : (1,2) array, nonnegative, max value <= 0.5
         range of frequency (x Nyquist rate) over which the spectrum is averaged
-    method : string, optional, default 'mean'
+    method : str, optional, default 'mean'
         method of averaging: Mean, median, exponentiated mean of logvalues
 
     Returns
@@ -846,8 +993,18 @@ def GetSn(y, range_ff=[0.25, 0.5], method='mean'):
     sn : noise standard deviation
     """
 
+    # Drop NaN frames before spectral estimation; the Nyquist bin (ff == 0.5),
+    # most affected by discontinuities at segment joins, is already excluded
+    # by the strict ff < range_ff[1] comparison below.
+    if np.any(np.isnan(y)):
+        y = y[~np.isnan(y)]
+    if len(y) == 0:
+        raise ValueError("Cannot estimate noise: all frames are NaN.")
     ff, Pxx = scipy.signal.welch(y)
     ind1 = ff > range_ff[0]
+    # Strict < (not <=) intentionally excludes the Nyquist bin (ff == 0.5):
+    # dropping NaN frames concatenates segments and creates discontinuities
+    # whose energy concentrates at the highest resolvable frequency.
     ind2 = ff < range_ff[1]
     ind = np.logical_and(ind1, ind2)
     Pxx_ind = Pxx[ind]
@@ -860,7 +1017,7 @@ def GetSn(y, range_ff=[0.25, 0.5], method='mean'):
     return sn
 
 
-def axcov(data, maxlag=5):
+def axcov(data: np.ndarray, maxlag: int = 5) -> np.ndarray:
     """
     Compute the autocovariance of data at lag = -maxlag:0:maxlag
 

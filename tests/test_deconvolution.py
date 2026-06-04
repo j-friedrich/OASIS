@@ -1,7 +1,31 @@
-import numpy.testing as npt
+from math import exp
+
 import numpy as np
-from oasis.oasis_methods import oasisAR1, constrained_oasisAR1, oasisAR2, constrained_oasisAR2
-from oasis.functions import gen_data, foopsi, constrained_foopsi, onnls, constrained_onnlsAR2
+import numpy.testing as npt
+import pytest
+from oasis.oasis_methods import (
+    constrained_oasisAR1,
+    constrained_oasisAR1_f32,
+    constrained_oasisAR2,
+    oasisAR1,
+    oasisAR1_f32,
+    oasisAR2,
+)
+
+from oasis.functions import (
+    ar1_to_tau,
+    ar2_to_tau,
+    constrained_onnlsAR2,
+    cvxpy_installed,
+    deconvolve,
+    gen_data,
+    onnls,
+    tau_to_ar1,
+    tau_to_ar2,
+)
+
+if cvxpy_installed:
+    from oasis.functions import constrained_foopsi, foopsi
 
 
 def AR1(constrained=False):
@@ -16,10 +40,12 @@ def AR1(constrained=False):
     npt.assert_allclose(np.corrcoef(result[1], s)[0, 1], 1, .2)
 
 
+@pytest.mark.skipif(not cvxpy_installed, reason="cvxpy not installed")
 def test_AR1():
     AR1()
 
 
+@pytest.mark.skipif(not cvxpy_installed, reason="cvxpy not installed")
 def test_constrainedAR1():
     AR1(True)
 
@@ -40,9 +66,137 @@ def AR2(constrained=False):
     npt.assert_allclose(np.corrcoef(result2[1], s)[0, 1], 1, .2)
 
 
+@pytest.mark.skipif(not cvxpy_installed, reason="cvxpy not installed")
 def test_AR2():
     AR2()
 
 
+@pytest.mark.skipif(not cvxpy_installed, reason="cvxpy not installed")
 def test_constrainedAR2():
     AR2(True)
+
+
+def test_oasisAR1_nan():
+    g = .95
+    y = gen_data([g], sn=.3, N=1)[0][0]
+    c_clean, s_clean = oasisAR1(y, g, lam=2.4)
+    # introduce NaNs in the middle
+    y_nan = y.copy()
+    nan_mask = np.zeros(len(y), dtype=bool)
+    nan_mask[10:20] = True
+    y_nan[nan_mask] = np.nan
+    c_nan, s_nan = oasisAR1(y_nan, g, lam=2.4)
+    # NaN frames propagate to output
+    assert np.all(np.isnan(c_nan[nan_mask]))
+    assert np.all(np.isnan(s_nan[nan_mask]))
+    # non-NaN frames are finite
+    assert np.all(np.isfinite(c_nan[~nan_mask]))
+    assert np.all(np.isfinite(s_nan[~nan_mask]))
+    # clean data must produce bit-identical results (NaN path must not affect clean input)
+    npt.assert_array_equal(oasisAR1(y, g, lam=2.4)[0], c_clean)
+    npt.assert_array_equal(oasisAR1(y, g, lam=2.4)[1], s_clean)
+
+
+@pytest.mark.skipif(not cvxpy_installed, reason="cvxpy not installed")
+def test_constrained_oasisAR1_nan():
+    g, sn = .95, .3
+    y = gen_data([g], sn=sn, N=1)[0][0]
+    c_clean, *_ = constrained_oasisAR1(y, g, sn)
+    y_nan = y.copy()
+    nan_mask = np.zeros(len(y), dtype=bool)
+    nan_mask[10:20] = True
+    y_nan[nan_mask] = np.nan
+    c_nan, s_nan, *_ = constrained_oasisAR1(y_nan, g, sn)
+    assert np.all(np.isnan(c_nan[nan_mask]))
+    assert np.all(np.isnan(s_nan[nan_mask]))
+    assert np.all(np.isfinite(c_nan[~nan_mask]))
+    # clean data must produce bit-identical results
+    npt.assert_array_equal(constrained_oasisAR1(y, g, sn)[0], c_clean)
+
+
+def test_deconvolve_tau_d():
+    """deconvolve with tau_d should give same result as passing g directly."""
+    framerate = 30.
+    tau_d = 1.0
+    g = tau_to_ar1(tau_d, framerate)
+    y = gen_data([g], sn=.3, N=1)[0][0]
+    r1 = deconvolve(y, g=(g,))
+    r2 = deconvolve(y, tau_d=tau_d, framerate=framerate)
+    npt.assert_array_equal(r1[0], r2[0])
+    npt.assert_array_equal(r1[1], r2[1])
+
+
+def test_deconvolve_tau_d_tau_r():
+    """deconvolve with tau_d + tau_r should give same result as passing g directly."""
+    framerate = 30.
+    tau_d, tau_r = 1.0, 0.1
+    g = tau_to_ar2(tau_d, tau_r, framerate)
+    y = gen_data(g, sn=.3, N=1, seed=3)[0][0]
+    r1 = deconvolve(y, g=tuple(g))
+    r2 = deconvolve(y, tau_d=tau_d, tau_r=tau_r, framerate=framerate)
+    npt.assert_array_equal(r1[0], r2[0])
+    npt.assert_array_equal(r1[1], r2[1])
+
+
+def test_deconvolve_tau_d_requires_framerate():
+    y = gen_data(N=1)[0][0]
+    with pytest.raises(ValueError, match="framerate"):
+        deconvolve(y, tau_d=1.0)
+
+
+def test_deconvolve_tau_r_requires_tau_d():
+    y = gen_data(N=1)[0][0]
+    with pytest.raises(ValueError, match="tau_d"):
+        deconvolve(y, tau_r=0.1, framerate=30.)
+
+
+def test_tau_to_ar1():
+    framerate = 30.
+    tau_d = 1.0
+    g = tau_to_ar1(tau_d, framerate)
+    npt.assert_allclose(g, exp(-1. / (tau_d * framerate)))
+
+
+def test_tau_to_ar2():
+    framerate = 30.
+    tau_d, tau_r = 1.0, 0.1
+    g1, g2 = tau_to_ar2(tau_d, tau_r, framerate)
+    d = exp(-1. / (tau_d * framerate))
+    r = exp(-1. / (tau_r * framerate))
+    npt.assert_allclose(g1, d + r)
+    npt.assert_allclose(g2, -d * r)
+
+
+def test_oasisAR1_f32():
+    """f32 results should be highly correlated with f64."""
+    g = .95
+    y = gen_data([g], sn=.3, N=1)[0][0]
+    c64, s64 = oasisAR1(y, g, lam=2.4)
+    c32, s32 = oasisAR1_f32(y.astype(np.float32), np.float32(g), lam=np.float32(2.4))
+    npt.assert_allclose(np.corrcoef(c32, c64)[0, 1], 1, 1e-5)
+    npt.assert_allclose(np.corrcoef(s32, s64)[0, 1], 1, 1e-3)
+
+
+@pytest.mark.skipif(not cvxpy_installed, reason="cvxpy not installed")
+def test_constrained_oasisAR1_f32():
+    """f32 results should be highly correlated with f64."""
+    g, sn = .95, .3
+    y = gen_data([g], sn=sn, N=1)[0][0]
+    c64, *_ = constrained_oasisAR1(y, g, sn)
+    c32, *_ = constrained_oasisAR1_f32(y.astype(np.float32), np.float32(g), np.float32(sn))
+    npt.assert_allclose(np.corrcoef(c32, c64)[0, 1], 1, 1e-4)
+
+
+def test_ar1_to_tau_roundtrip():
+    framerate = 30.
+    tau_d = 1.0
+    npt.assert_allclose(ar1_to_tau(tau_to_ar1(tau_d, framerate), framerate), tau_d)
+
+
+def test_ar2_to_tau_roundtrip():
+    framerate = 30.
+    tau_d, tau_r = 1.0, 0.1
+    g1, g2 = tau_to_ar2(tau_d, tau_r, framerate)
+    tau_d_hat, tau_r_hat = ar2_to_tau(g1, g2, framerate)
+    npt.assert_allclose(tau_d_hat, tau_d)
+    npt.assert_allclose(tau_r_hat, tau_r)

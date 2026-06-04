@@ -3,7 +3,10 @@ an active set method for sparse nonnegative deconvolution
 @author: Johannes Friedrich
 """
 
+import warnings
 import numpy as np
+warnings.filterwarnings("ignore", category=UserWarning, module=r"cvxpy")
+warnings.filterwarnings("ignore", category=DeprecationWarning, module=r"cvxpy")
 from matplotlib import pyplot as plt
 from oasis import oasisAR1, oasisAR2
 try:
@@ -21,7 +24,7 @@ col = ['#0072B2', '#009E73', '#D55E00', '#E69F00',
 
 def plotTrace(lg=False):
     fig = plt.figure(figsize=(10, 9))
-    fig.add_axes([.13, .7, .86, .29])
+    fig.add_axes([.15, .71, .84, .28])
     plt.plot(c, c=col[0], label='L1')
     plt.plot(c_t, c=col[1], label='Thresh.')
     plt.plot(trueC[0], c=col[2], lw=3, label='Truth', zorder=-5)
@@ -35,7 +38,7 @@ def plotTrace(lg=False):
     plt.ylabel('Fluor.')
     plt.xlim(0, 452)
 
-    fig.add_axes([.13, .39, .86, .29])
+    fig.add_axes([.15, .40, .84, .28])
     for i, ss in enumerate(s[:500]):
         if ss > 1e-2:
             plt.plot([i, i], [2.5, 2.5 + ss], c=col[0], zorder=10)
@@ -57,7 +60,7 @@ def plotTrace(lg=False):
     plt.ylim(0, 3.5)
     plt.xlim(0, 452)
 
-    fig.add_axes([.13, .08, .86, .29])
+    fig.add_axes([.15, .10, .84, .28])
     for i, r in enumerate(res):
         for rr in r:
             plt.plot([rr, rr], [.1 * i - .04, .1 * i + .04], c='k')

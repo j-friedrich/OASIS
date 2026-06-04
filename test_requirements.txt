@@ -1,3 +1,0 @@
-cvxpy
-ecos
-nose2

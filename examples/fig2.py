@@ -97,6 +97,7 @@ def cb(y, P, counter, current):
     plt.yticks([])
     if save_figs:
         plt.savefig('fig/%d.pdf' % counter)
+    plt.tight_layout(pad=0.2)
     plt.show()
 
 

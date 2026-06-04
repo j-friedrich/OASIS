@@ -23,6 +23,7 @@ for opt in ['-', 'l', 'lb', 'lbg', 'lbg10', 'lbg5', 'lbg_ds', 'lbg10_ds', 'lbg5_
     results[opt]['correlation'] = []
     for i, y in enumerate(Y):
         g, sn = estimate_parameters(y, p=1, fudge_factor=.99, method='logmexp')
+        g, sn = float(g[0]), float(sn)
         lam = 0
         b = np.percentile(y, 15)
         if opt == '-':

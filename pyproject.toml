@@ -1,0 +1,50 @@
+[build-system]
+requires = ["hatchling", "hatch-cython", "Cython", "numpy"]
+build-backend = "hatchling.build"
+
+[project]
+name = "oasis-deconv"
+dynamic = ["version"]
+description = "Fast algorithm for deconvolution of neural calcium imaging traces"
+readme = "README.md"
+license = { text = "GPL-3.0" }
+authors = [{ name = "Johannes Friedrich", email = "johannes.friedrich@alleninstitute.org" }]
+urls = { Homepage = "https://github.com/j-friedrich/OASIS" }
+requires-python = ">=3.8"
+dependencies = ["numpy", "scipy", "matplotlib"]
+
+[project.optional-dependencies]
+test = ["pytest", "numpy"]
+
+[tool.hatch.version]
+path = "oasis/__init__.py"
+
+[tool.hatch.build.targets.wheel]
+packages = ["oasis"]
+
+[tool.hatch.build.hooks.cython]
+dependencies = ["hatch-cython", "Cython", "numpy"]
+
+[tool.hatch.build.hooks.cython.options]
+src = "oasis"
+include_numpy = true
+compile_py = false
+language = "c++"
+compile_args = ["-O2"]
+directives = { cdivision = true }
+
+[tool.pytest.ini_options]
+filterwarnings = [
+    "ignore::UserWarning:cvxpy",
+    "ignore::DeprecationWarning:cvxpy",
+]
+
+[tool.ruff]
+line-length = 100
+exclude = ["examples/"]
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "W"]
+ignore = ["E741"]
+
+
