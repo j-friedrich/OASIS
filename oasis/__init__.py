@@ -15,5 +15,5 @@ __all__ = [
     "ar2_to_tau",
 ]
 
-__version__ = "0.3.0"
+__version__ = "0.3.1"
 __author__ = 'Johannes Friedrich'
