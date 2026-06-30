@@ -568,7 +568,7 @@ def oasisAR2(np.ndarray[DOUBLE, ndim=1] y, DOUBLE g1, DOUBLE g2,
     newpool.v, newpool.w, newpool.t, newpool.l = fmax(0, _y[0]), fmax(0, _y[0]), 0, 1
     P.push_back(newpool)
     # precompute
-    len_g = T / T_over_ISI
+    len_g = T // T_over_ISI
     d = (g1 + sqrt(g1 * g1 + 4 * g2)) / 2
     r = (g1 - sqrt(g1 * g1 + 4 * g2)) / 2
     g11 = (np.exp(log(d) * np.arange(1, len_g + 1)) -
@@ -752,7 +752,7 @@ def constrained_oasisAR2(np.ndarray[DOUBLE, ndim=1] y, DOUBLE g1, DOUBLE g2, DOU
         newpool.v, newpool.w, newpool.t, newpool.l = y[t], y[t], t, 1
         P.push_back(newpool)
     # precompute
-    len_g = T / T_over_ISI
+    len_g = T // T_over_ISI
     d = (g1 + sqrt(g1 * g1 + 4 * g2)) / 2
     r = (g1 - sqrt(g1 * g1 + 4 * g2)) / 2
     g11 = (np.exp(log(d) * np.arange(1, len_g + 1)) -
