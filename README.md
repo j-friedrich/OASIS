@@ -8,7 +8,7 @@ The code can be readily run on neural temporal fluorescence calcium imaging data
 <p align="left"><img src="https://github.com/j-friedrich/OASIS/blob/master/examples/oasis_video.gif"  width="90%"></p>
 
 ## Requirements
-The package is tested on Linux, macOS, and Windows with Python 3.8–3.13. Dependencies (numpy, scipy, matplotlib) are handled automatically by pip.
+The package is tested on Linux, macOS, and Windows with Python 3.8–3.14. Dependencies (numpy, scipy, matplotlib) are handled automatically by pip.
 
 Optionally, to perform comparisons with interior point methods:
 
