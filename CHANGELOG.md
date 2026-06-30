@@ -1,5 +1,19 @@
 # Changelog
 
+## [0.3.1] - 2026-06-30
+
+### Bug fixes
+
+- **Cython 3.1 compatibility**: fixed `T / T_over_ISI` using float division into
+  `unsigned int len_g` in `oasisAR2` and `constrained_oasisAR2` — now uses `//`.
+- **`constrained_onnlsAR2` `UnboundLocalError`**: `res0` was only assigned inside
+  an `if` branch but accessed after the loop (issue #28).
+
+### Other changes
+
+- Added Python 3.14 to CI and wheel build matrix.
+- Updated README: modernized requirements, installation, and examples sections.
+
 ## [0.3.0] - 2026-06-03
 
 ### New features
