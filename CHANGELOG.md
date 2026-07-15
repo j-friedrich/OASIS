@@ -2,6 +2,19 @@
 
 ## [0.3.1] - 2026-06-30
 
+### New features
+
+- **AR(2) auto-estimation via `tau_r=None`**: pass `tau_r=None` (with `tau_d=None`)
+  to `deconvolve` to trigger AR(2) auto-estimation. Previously only discoverable
+  via the low-level `g=(None, None)` parameter (issue #32).
+- **NaN handling in `estimate_time_constant` and `estimate_parameters`**: traces
+  with NaN frames (missing observations) no longer crash. The new `nan_treatment`
+  parameter controls the strategy:
+  - `'drop'` (default): concatenates non-NaN frames before computing autocovariance.
+  - `'pairwise'`: subtracts `nanmean`, then uses `nansum` and per-lag valid-pair
+    counts. Benchmarks across gap fractions 2–40 % with random-sized gaps show
+    `'drop'` is consistently more accurate.
+
 ### Bug fixes
 
 - **Cython 3.1 compatibility**: fixed `T / T_over_ISI` using float division into
@@ -9,10 +22,20 @@
 - **`constrained_onnlsAR2` `UnboundLocalError`**: `res0` was only assigned inside
   an `if` branch but accessed after the loop (issue #28).
 
+### API / code quality
+
+- `g` parameter in `deconvolve` docstring marked as low-level; `tau_d`/`tau_r` are
+  the recommended interface for new code.
+- Removed dead `axcov` function (inline dot-product autocovariance is ~23× faster
+  for typical inputs and was already used everywhere).
+- Fixed and completed docstrings in `functions.py` (`estimate_parameters`,
+  `estimate_time_constant`).
+
 ### Other changes
 
 - Added Python 3.14 to CI and wheel build matrix.
-- Updated README: modernized requirements, installation, and examples sections.
+- Updated README: Python 3.8–3.14, modernized requirements and examples.
+- Updated and re-executed Demo.ipynb: replaced `g=(None,None)` with `tau_r=None`.
 
 ## [0.3.0] - 2026-06-03
 

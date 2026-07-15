@@ -114,13 +114,24 @@ def test_constrained_oasisAR1_nan():
     npt.assert_array_equal(constrained_oasisAR1(y, g, sn)[0], c_clean)
 
 
+def test_constrained_onnlsAR2():
+    """constrained_onnlsAR2 output should correlate well with gen_data ground truth."""
+    g = [1.7, -.712]
+    sn = .3
+    y, c, s = [a[0] for a in gen_data(g, sn, N=1, seed=3)]
+    c_hat, s_hat = constrained_onnlsAR2(y, g, sn)[:2]
+    npt.assert_allclose(np.corrcoef(c_hat, c)[0, 1], 1, atol=0.03)
+    npt.assert_allclose(np.corrcoef(s_hat, s)[0, 1], 1, atol=0.2)
+
+
 def test_deconvolve_tau_d():
     """deconvolve with tau_d should give same result as passing g directly."""
     framerate = 30.
     tau_d = 1.0
     g = tau_to_ar1(tau_d, framerate)
     y = gen_data([g], sn=.3, N=1)[0][0]
-    r1 = deconvolve(y, g=(g,))
+    with pytest.warns(DeprecationWarning, match="'g' parameter is deprecated"):
+        r1 = deconvolve(y, g=(g,))
     r2 = deconvolve(y, tau_d=tau_d, framerate=framerate)
     npt.assert_array_equal(r1[0], r2[0])
     npt.assert_array_equal(r1[1], r2[1])
@@ -132,7 +143,8 @@ def test_deconvolve_tau_d_tau_r():
     tau_d, tau_r = 1.0, 0.1
     g = tau_to_ar2(tau_d, tau_r, framerate)
     y = gen_data(g, sn=.3, N=1, seed=3)[0][0]
-    r1 = deconvolve(y, g=tuple(g))
+    with pytest.warns(DeprecationWarning, match="'g' parameter is deprecated"):
+        r1 = deconvolve(y, g=tuple(g))
     r2 = deconvolve(y, tau_d=tau_d, tau_r=tau_r, framerate=framerate)
     npt.assert_array_equal(r1[0], r2[0])
     npt.assert_array_equal(r1[1], r2[1])
@@ -148,6 +160,35 @@ def test_deconvolve_tau_r_requires_tau_d():
     y = gen_data(N=1)[0][0]
     with pytest.raises(ValueError, match="tau_d"):
         deconvolve(y, tau_r=0.1, framerate=30.)
+
+
+def test_deconvolve_tau_r_none_ar2_autoestimate():
+    """tau_r=None with tau_d=None triggers AR(2) auto-estimation via g=(None, None)."""
+    y = gen_data((.95, -.1), sn=.3, N=1, seed=7)[0][0]
+    c, s, b, g, lam = deconvolve(y, tau_r=None)
+    assert len(g) == 2
+
+
+def test_deconvolve_tau_r_zero_is_ar1():
+    """tau_r=0 (default) produces AR(1) result, same as omitting tau_r."""
+    y = gen_data(N=1)[0][0]
+    r1 = deconvolve(y)
+    r2 = deconvolve(y, tau_r=0)
+    npt.assert_array_equal(r1[0], r2[0])
+
+
+def test_deconvolve_nan_autoestimate():
+    """Auto-estimated tau_d from a NaN-gapped trace should be close to ground truth."""
+    framerate = 30.
+    tau_d = 0.65  # seconds
+    g_true = tau_to_ar1(tau_d, framerate)
+    y = gen_data([g_true], sn=.3, N=1, seed=42)[0][0]
+    y[100:120] = np.nan
+    y[500:510] = np.nan
+    c, s, b, g_est, lam = deconvolve(y)
+    tau_d_est = ar1_to_tau(g_est, framerate)
+    assert np.any(np.isnan(c))  # NaNs propagated to output
+    npt.assert_allclose(tau_d_est, tau_d, rtol=0.3)  # within 30% of ground truth
 
 
 def test_tau_to_ar1():
