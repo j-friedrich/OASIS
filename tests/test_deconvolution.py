@@ -29,15 +29,15 @@ if cvxpy_installed:
 
 
 def AR1(constrained=False):
-    g = .95
-    sn = .3
+    g = 0.95
+    sn = 0.3
     y, c, s = [a[0] for a in gen_data([g], sn, N=1)]
     result = constrained_oasisAR1(y, g, sn) if constrained else oasisAR1(y, g, lam=2.4)
     result_foopsi = constrained_foopsi(y, [g], sn) if constrained else foopsi(y, [g], lam=2.4)
     npt.assert_allclose(np.corrcoef(result[0], result_foopsi[0])[0, 1], 1)
     npt.assert_allclose(np.corrcoef(result[1], result_foopsi[1])[0, 1], 1)
-    npt.assert_allclose(np.corrcoef(result[0], c)[0, 1], 1, .03)
-    npt.assert_allclose(np.corrcoef(result[1], s)[0, 1], 1, .2)
+    npt.assert_allclose(np.corrcoef(result[0], c)[0, 1], 1, 0.03)
+    npt.assert_allclose(np.corrcoef(result[1], s)[0, 1], 1, 0.2)
 
 
 @pytest.mark.skipif(not cvxpy_installed, reason="cvxpy not installed")
@@ -51,19 +51,20 @@ def test_constrainedAR1():
 
 
 def AR2(constrained=False):
-    g = [1.7, -.712]
-    sn = .3
+    g = [1.7, -0.712]
+    sn = 0.3
     y, c, s = [a[0] for a in gen_data(g, sn, N=1, seed=3)]
     result = constrained_onnlsAR2(y, g, sn) if constrained else onnls(y, g, lam=25)
     result_foopsi = constrained_foopsi(y, g, sn) if constrained else foopsi(y, g, lam=25)
     npt.assert_allclose(np.corrcoef(result[0], result_foopsi[0])[0, 1], 1, 1e-3)
     npt.assert_allclose(np.corrcoef(result[1], result_foopsi[1])[0, 1], 1, 1e-2)
-    npt.assert_allclose(np.corrcoef(result[0], c)[0, 1], 1, .03)
-    npt.assert_allclose(np.corrcoef(result[1], s)[0, 1], 1, .2)
-    result2 = constrained_oasisAR2(y, g[0], g[1], sn) if constrained \
-        else oasisAR2(y, g[0], g[1], lam=25)
-    npt.assert_allclose(np.corrcoef(result2[0], c)[0, 1], 1, .03)
-    npt.assert_allclose(np.corrcoef(result2[1], s)[0, 1], 1, .2)
+    npt.assert_allclose(np.corrcoef(result[0], c)[0, 1], 1, 0.03)
+    npt.assert_allclose(np.corrcoef(result[1], s)[0, 1], 1, 0.2)
+    result2 = (
+        constrained_oasisAR2(y, g[0], g[1], sn) if constrained else oasisAR2(y, g[0], g[1], lam=25)
+    )
+    npt.assert_allclose(np.corrcoef(result2[0], c)[0, 1], 1, 0.03)
+    npt.assert_allclose(np.corrcoef(result2[1], s)[0, 1], 1, 0.2)
 
 
 @pytest.mark.skipif(not cvxpy_installed, reason="cvxpy not installed")
@@ -77,8 +78,8 @@ def test_constrainedAR2():
 
 
 def test_oasisAR1_nan():
-    g = .95
-    y = gen_data([g], sn=.3, N=1)[0][0]
+    g = 0.95
+    y = gen_data([g], sn=0.3, N=1)[0][0]
     c_clean, s_clean = oasisAR1(y, g, lam=2.4)
     # introduce NaNs in the middle
     y_nan = y.copy()
@@ -99,7 +100,7 @@ def test_oasisAR1_nan():
 
 @pytest.mark.skipif(not cvxpy_installed, reason="cvxpy not installed")
 def test_constrained_oasisAR1_nan():
-    g, sn = .95, .3
+    g, sn = 0.95, 0.3
     y = gen_data([g], sn=sn, N=1)[0][0]
     c_clean, *_ = constrained_oasisAR1(y, g, sn)
     y_nan = y.copy()
@@ -116,8 +117,8 @@ def test_constrained_oasisAR1_nan():
 
 def test_constrained_onnlsAR2():
     """constrained_onnlsAR2 output should correlate well with gen_data ground truth."""
-    g = [1.7, -.712]
-    sn = .3
+    g = [1.7, -0.712]
+    sn = 0.3
     y, c, s = [a[0] for a in gen_data(g, sn, N=1, seed=3)]
     c_hat, s_hat = constrained_onnlsAR2(y, g, sn)[:2]
     npt.assert_allclose(np.corrcoef(c_hat, c)[0, 1], 1, atol=0.03)
@@ -126,10 +127,10 @@ def test_constrained_onnlsAR2():
 
 def test_deconvolve_tau_d():
     """deconvolve with tau_d should give same result as passing g directly."""
-    framerate = 30.
+    framerate = 30.0
     tau_d = 1.0
     g = tau_to_ar1(tau_d, framerate)
-    y = gen_data([g], sn=.3, N=1)[0][0]
+    y = gen_data([g], sn=0.3, N=1)[0][0]
     with pytest.warns(DeprecationWarning, match="'g' parameter is deprecated"):
         r1 = deconvolve(y, g=(g,))
     r2 = deconvolve(y, tau_d=tau_d, framerate=framerate)
@@ -139,10 +140,10 @@ def test_deconvolve_tau_d():
 
 def test_deconvolve_tau_d_tau_r():
     """deconvolve with tau_d + tau_r should give same result as passing g directly."""
-    framerate = 30.
+    framerate = 30.0
     tau_d, tau_r = 1.0, 0.1
     g = tau_to_ar2(tau_d, tau_r, framerate)
-    y = gen_data(g, sn=.3, N=1, seed=3)[0][0]
+    y = gen_data(g, sn=0.3, N=1, seed=3)[0][0]
     with pytest.warns(DeprecationWarning, match="'g' parameter is deprecated"):
         r1 = deconvolve(y, g=tuple(g))
     r2 = deconvolve(y, tau_d=tau_d, tau_r=tau_r, framerate=framerate)
@@ -159,12 +160,12 @@ def test_deconvolve_tau_d_requires_framerate():
 def test_deconvolve_tau_r_requires_tau_d():
     y = gen_data(N=1)[0][0]
     with pytest.raises(ValueError, match="tau_d"):
-        deconvolve(y, tau_r=0.1, framerate=30.)
+        deconvolve(y, tau_r=0.1, framerate=30.0)
 
 
 def test_deconvolve_tau_r_none_ar2_autoestimate():
     """tau_r=None with tau_d=None triggers AR(2) auto-estimation via g=(None, None)."""
-    y = gen_data((.95, -.1), sn=.3, N=1, seed=7)[0][0]
+    y = gen_data((0.95, -0.1), sn=0.3, N=1, seed=7)[0][0]
     c, s, b, g, lam = deconvolve(y, tau_r=None)
     assert len(g) == 2
 
@@ -179,10 +180,10 @@ def test_deconvolve_tau_r_zero_is_ar1():
 
 def test_deconvolve_nan_autoestimate():
     """Auto-estimated tau_d from a NaN-gapped trace should be close to ground truth."""
-    framerate = 30.
+    framerate = 30.0
     tau_d = 0.65  # seconds
     g_true = tau_to_ar1(tau_d, framerate)
-    y = gen_data([g_true], sn=.3, N=1, seed=42)[0][0]
+    y = gen_data([g_true], sn=0.3, N=1, seed=42)[0][0]
     y[100:120] = np.nan
     y[500:510] = np.nan
     c, s, b, g_est, lam = deconvolve(y)
@@ -191,27 +192,52 @@ def test_deconvolve_nan_autoestimate():
     npt.assert_allclose(tau_d_est, tau_d, rtol=0.3)  # within 30% of ground truth
 
 
+def test_deconvolve_penalty_none_ar1():
+    """penalty=None routes through oasisAR1 and correlates with ground truth."""
+    g = 0.95
+    y, c, s = [a[0] for a in gen_data([g], sn=0.3, N=1)]
+    c_hat, s_hat, b, g_out, lam = deconvolve(
+        y, tau_d=ar1_to_tau(g, 30.0), framerate=30.0, penalty=None
+    )
+    npt.assert_allclose(np.corrcoef(c_hat, c)[0, 1], 1, atol=0.03)
+    assert lam == 0.0
+    assert b == 0.0
+
+
+def test_deconvolve_penalty_none_ar2():
+    """penalty=None routes through oasisAR2 for AR(2) parameters."""
+    g = [1.7, -0.712]
+    y, c, s = [a[0] for a in gen_data(g, sn=0.3, N=1, seed=3)]
+    tau_d, tau_r = ar2_to_tau(g[0], g[1], 30.0)
+    c_hat, s_hat, b, g_out, lam = deconvolve(
+        y, tau_d=tau_d, tau_r=tau_r, framerate=30.0, penalty=None
+    )
+    npt.assert_allclose(np.corrcoef(c_hat, c)[0, 1], 1, atol=0.03)
+    assert lam == 0.0
+    assert b == 0.0
+
+
 def test_tau_to_ar1():
-    framerate = 30.
+    framerate = 30.0
     tau_d = 1.0
     g = tau_to_ar1(tau_d, framerate)
-    npt.assert_allclose(g, exp(-1. / (tau_d * framerate)))
+    npt.assert_allclose(g, exp(-1.0 / (tau_d * framerate)))
 
 
 def test_tau_to_ar2():
-    framerate = 30.
+    framerate = 30.0
     tau_d, tau_r = 1.0, 0.1
     g1, g2 = tau_to_ar2(tau_d, tau_r, framerate)
-    d = exp(-1. / (tau_d * framerate))
-    r = exp(-1. / (tau_r * framerate))
+    d = exp(-1.0 / (tau_d * framerate))
+    r = exp(-1.0 / (tau_r * framerate))
     npt.assert_allclose(g1, d + r)
     npt.assert_allclose(g2, -d * r)
 
 
 def test_oasisAR1_f32():
     """f32 results should be highly correlated with f64."""
-    g = .95
-    y = gen_data([g], sn=.3, N=1)[0][0]
+    g = 0.95
+    y = gen_data([g], sn=0.3, N=1)[0][0]
     c64, s64 = oasisAR1(y, g, lam=2.4)
     c32, s32 = oasisAR1_f32(y.astype(np.float32), np.float32(g), lam=np.float32(2.4))
     npt.assert_allclose(np.corrcoef(c32, c64)[0, 1], 1, 1e-5)
@@ -221,7 +247,7 @@ def test_oasisAR1_f32():
 @pytest.mark.skipif(not cvxpy_installed, reason="cvxpy not installed")
 def test_constrained_oasisAR1_f32():
     """f32 results should be highly correlated with f64."""
-    g, sn = .95, .3
+    g, sn = 0.95, 0.3
     y = gen_data([g], sn=sn, N=1)[0][0]
     c64, *_ = constrained_oasisAR1(y, g, sn)
     c32, *_ = constrained_oasisAR1_f32(y.astype(np.float32), np.float32(g), np.float32(sn))
@@ -229,13 +255,13 @@ def test_constrained_oasisAR1_f32():
 
 
 def test_ar1_to_tau_roundtrip():
-    framerate = 30.
+    framerate = 30.0
     tau_d = 1.0
     npt.assert_allclose(ar1_to_tau(tau_to_ar1(tau_d, framerate), framerate), tau_d)
 
 
 def test_ar2_to_tau_roundtrip():
-    framerate = 30.
+    framerate = 30.0
     tau_d, tau_r = 1.0, 0.1
     g1, g2 = tau_to_ar2(tau_d, tau_r, framerate)
     tau_d_hat, tau_r_hat = ar2_to_tau(g1, g2, framerate)

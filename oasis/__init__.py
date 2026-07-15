@@ -16,4 +16,4 @@ __all__ = [
 ]
 
 __version__ = "0.3.1"
-__author__ = 'Johannes Friedrich'
+__author__ = "Johannes Friedrich"

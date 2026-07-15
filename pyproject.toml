@@ -34,6 +34,7 @@ compile_args = ["-O2"]
 directives = { cdivision = true }
 
 [tool.pytest.ini_options]
+testpaths = ["tests"]
 filterwarnings = [
     "ignore::UserWarning:cvxpy",
     "ignore::DeprecationWarning:cvxpy",

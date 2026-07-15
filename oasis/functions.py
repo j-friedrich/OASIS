@@ -8,10 +8,11 @@ import scipy
 import scipy.signal
 from scipy.optimize import curve_fit, minimize
 
-from oasis.oasis_methods import constrained_oasisAR1, oasisAR1
+from oasis.oasis_methods import constrained_oasisAR1, oasisAR1, oasisAR2
 
 try:
     import cvxpy as cvx
+
     cvxpy_installed = True
 except ImportError:
     cvxpy_installed = False
@@ -37,7 +38,7 @@ def tau_to_ar1(tau_d: float, framerate: float) -> float:
     g : float
         AR(1) parameter such that the impulse response decays as exp(-t/tau_d).
     """
-    return exp(-1. / (tau_d * framerate))
+    return exp(-1.0 / (tau_d * framerate))
 
 
 def tau_to_ar2(tau_d: float, tau_r: float, framerate: float) -> list[float]:
@@ -64,8 +65,8 @@ def tau_to_ar2(tau_d: float, tau_r: float, framerate: float) -> list[float]:
     g : list of float, length 2
         AR(2) parameters [g1, g2].
     """
-    d = exp(-1. / (tau_d * framerate))
-    r = exp(-1. / (tau_r * framerate))
+    d = exp(-1.0 / (tau_d * framerate))
+    r = exp(-1.0 / (tau_r * framerate))
     return [d + r, -d * r]
 
 
@@ -89,8 +90,8 @@ def ar1_to_tau(g: float, framerate: float) -> float:
     if g <= 0:
         raise ValueError(f"g must be positive, got {g}")
     if g == 1:
-        return float('inf')
-    return -1. / (log(g) * framerate)
+        return float("inf")
+    return -1.0 / (log(g) * framerate)
 
 
 def ar2_to_tau(g1: float, g2: float, framerate: float) -> tuple[float, float]:
@@ -114,23 +115,31 @@ def ar2_to_tau(g1: float, g2: float, framerate: float) -> tuple[float, float]:
     tau_r : float
         Rise time constant in seconds.
     """
-    disc = g1 ** 2 + 4 * g2
+    disc = g1**2 + 4 * g2
     if disc < 0:
         raise ValueError(
             f"AR(2) parameters give complex roots (g1²+4g2={disc:.4g} < 0). "
-            "The impulse response is oscillatory, not a bi-exponential.")
+            "The impulse response is oscillatory, not a bi-exponential."
+        )
     tmp = sqrt(disc) / 2
-    tau_d = -1. / (log(g1 / 2 + tmp) * framerate)
-    tau_r = -1. / (log(g1 / 2 - tmp) * framerate)
+    tau_d = -1.0 / (log(g1 / 2 + tmp) * framerate)
+    tau_r = -1.0 / (log(g1 / 2 - tmp) * framerate)
     # Note: if g1/2 - tmp is near zero (degenerate AR(2) with very fast rise,
     # unresolvable at this framerate), tau_r will be near zero or inf.
     # In that case the AR(2) has effectively collapsed to AR(1).
     return tau_d, tau_r
 
 
-def gen_data(g: tuple = (.95,), sn: float = .3, T: int = 3000, framerate: float = 30,
-             firerate: float = .5, b: float = 0, N: int = 20, seed: int = 13,
-             ) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+def gen_data(
+    g: tuple = (0.95,),
+    sn: float = 0.3,
+    T: int = 3000,
+    framerate: float = 30,
+    firerate: float = 0.5,
+    b: float = 0,
+    N: int = 20,
+    seed: int = 13,
+) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
     """
     Generate data from homogenous Poisson Process
 
@@ -175,9 +184,16 @@ def gen_data(g: tuple = (.95,), sn: float = .3, T: int = 3000, framerate: float 
     return Y, truth, trueSpikes
 
 
-def gen_sinusoidal_data(g: tuple = (.95,), sn: float = .3, T: int = 3000, framerate: float = 30,
-                        firerate: float = .5, b: float = 0, N: int = 20, seed: int = 13,
-                        ) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+def gen_sinusoidal_data(
+    g: tuple = (0.95,),
+    sn: float = 0.3,
+    T: int = 3000,
+    framerate: float = 30,
+    firerate: float = 0.5,
+    b: float = 0,
+    N: int = 20,
+    seed: int = 13,
+) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
     """
     Generate data from inhomogenous Poisson Process with sinusoidal instantaneous activity
 
@@ -211,8 +227,9 @@ def gen_sinusoidal_data(g: tuple = (.95,), sn: float = .3, T: int = 3000, framer
     """
 
     np.random.seed(seed)
-    trueSpikes = np.random.rand(N, T) < firerate / float(framerate) * \
-        np.sin(np.arange(T) // 50)**3 * 4
+    trueSpikes = (
+        np.random.rand(N, T) < firerate / float(framerate) * np.sin(np.arange(T) // 50) ** 3 * 4
+    )
     truth = trueSpikes.astype(float)
     for i in range(2, T):
         if len(g) == 2:
@@ -223,11 +240,19 @@ def gen_sinusoidal_data(g: tuple = (.95,), sn: float = .3, T: int = 3000, framer
     return Y, truth, trueSpikes
 
 
-def deconvolve(y: np.ndarray, tau_d: float | None = None, tau_r: float = 0,
-               framerate: float | None = None, g: tuple = (None,), sn: float | None = None,
-               b: float | None = None, b_nonneg: bool = True, optimize_g: int = 0,
-               penalty: int = 1, **kwargs,
-               ) -> tuple[np.ndarray, np.ndarray, float, tuple, float]:
+def deconvolve(
+    y: np.ndarray,
+    tau_d: float | None = None,
+    tau_r: float = 0,
+    framerate: float | None = None,
+    g: tuple = (None,),
+    sn: float | None = None,
+    b: float | None = None,
+    b_nonneg: bool = True,
+    optimize_g: int = 0,
+    penalty: int | None = 1,
+    **kwargs,
+) -> tuple[np.ndarray, np.ndarray, float, tuple, float]:
     """Infer the most likely discretized spike train underlying a fluorescence trace.
 
     Solves the noise constrained sparse non-negative deconvolution problem
@@ -265,10 +290,15 @@ def deconvolve(y: np.ndarray, tau_d: float | None = None, tau_r: float = 0,
     optimize_g : int, optional, default 0
         Number of large, isolated events to consider for optimizing g.
         If optimize_g=0 the provided or estimated g is not further optimized.
-    penalty : int, optional, default 1
-        Sparsity penalty. 1: min |s|_1  0: min |s|_0
+    penalty : int or None, optional, default 1
+        Sparsity penalty. 1: min |s|_1  0: min |s|_0.
+        None: skip the noise-constrained optimization entirely and call
+        oasisAR1 / oasisAR2 directly with a fixed lam (default 0). The
+        input is assumed baseline-subtracted; b is treated as a fixed offset
+        (default 0). sn, b_nonneg, and optimize_g are unused in this mode.
     **kwargs : dict
         Further keywords passed on to constrained_oasisAR1 or constrained_onnlsAR2.
+        When penalty=None, only lam is recognised (default 0).
 
     Returns
     -------
@@ -288,7 +318,8 @@ def deconvolve(y: np.ndarray, tau_d: float | None = None, tau_r: float = 0,
             "The 'g' parameter is deprecated and will be removed in v0.4.0. "
             "Use tau_d and tau_r instead (convert with ar1_to_tau / ar2_to_tau "
             "if you have pre-computed AR parameters).",
-            DeprecationWarning, stacklevel=2,
+            DeprecationWarning,
+            stacklevel=2,
         )
     if tau_r is not None and tau_r != 0 and tau_d is None:
         raise ValueError("tau_d is required when tau_r is provided")
@@ -301,36 +332,64 @@ def deconvolve(y: np.ndarray, tau_d: float | None = None, tau_r: float = 0,
             g = tuple(tau_to_ar2(tau_d, tau_r, framerate))
         else:
             g = (tau_to_ar1(tau_d, framerate),)
-    if np.can_cast(y.dtype,np.double,casting="safe"):
+    if np.can_cast(y.dtype, np.double, casting="safe"):
         y = y.astype(np.double)
     else:
         raise TypeError("Input trace should be a np.double")
 
     if g[0] is None:
-        fudge_factor = .97 if (optimize_g and len(g) == 1) else .98
+        fudge_factor = 0.97 if (optimize_g and len(g) == 1) else 0.98
         est = estimate_parameters(y, p=len(g), fudge_factor=fudge_factor)
         g = est[0]
         if sn is None:
             sn = est[1]
     elif sn is None:
         sn = GetSn(y)
+    if penalty is None:
+        # plain deconvolution: fixed lam, no noise constraint, no baseline estimation
+        lam = kwargs.pop("lam", 0)
+        if len(g) == 1:
+            c, s = oasisAR1(y - (b or 0), g[0], lam=lam)
+            return c, s, b or 0.0, tuple(g), 0.0
+        elif len(g) == 2:
+            c, s = oasisAR2(y - (b or 0), g[0], g[1], lam=lam)
+            return c, s, b or 0.0, tuple(g), 0.0
+        else:
+            raise ValueError("g must have length 1 or 2")
     if len(g) == 1:
-        return constrained_oasisAR1(y, g[0], sn, optimize_b=True if b is None else False,
-                                    b_nonneg=b_nonneg, optimize_g=optimize_g,
-                                    penalty=penalty, **kwargs)
+        return constrained_oasisAR1(
+            y,
+            g[0],
+            sn,
+            optimize_b=True if b is None else False,
+            b_nonneg=b_nonneg,
+            optimize_g=optimize_g,
+            penalty=penalty,
+            **kwargs,
+        )
     elif len(g) == 2:
         if optimize_g > 0:
-            warn("Optimization of AR parameters is already fairly stable for AR(1), "
-                 "but slower and more experimental for AR(2)")
-        return constrained_onnlsAR2(y, g, sn, optimize_b=True if b is None else False,
-                                    b_nonneg=b_nonneg, optimize_g=optimize_g,
-                                    penalty=penalty, **kwargs)
+            warn(
+                "Optimization of AR parameters is already fairly stable for AR(1), "
+                "but slower and more experimental for AR(2)"
+            )
+        return constrained_onnlsAR2(
+            y,
+            g,
+            sn,
+            optimize_b=True if b is None else False,
+            b_nonneg=b_nonneg,
+            optimize_g=optimize_g,
+            penalty=penalty,
+            **kwargs,
+        )
     else:
-        print('g must have length 1 or 2, cause only AR(1) and AR(2) are currently implemented')
+        print("g must have length 1 or 2, cause only AR(1) and AR(2) are currently implemented")
 
 
 if cvxpy_installed:
-    def foopsi(y, g, lam=0, b=0, solver='CLARABEL'):
+
+    def foopsi(y, g, lam=0, b=0, solver="CLARABEL"):
         """Infer the most likely discretized spike train underlying a fluorescence trace.
 
         Solves the sparse non-negative deconvolution problem
@@ -368,8 +427,9 @@ if cvxpy_installed:
         # cvxpy had sometime trouble to find above solution for G*c, therefore
         if b is None:
             b = cvx.Variable(1)
-        objective = cvx.Minimize(.5 * cvx.sum_squares(b + c - y) +
-                                 lam * (1 - np.sum(g)) * cvx.norm(c, 1))
+        objective = cvx.Minimize(
+            0.5 * cvx.sum_squares(b + c - y) + lam * (1 - np.sum(g)) * cvx.norm(c, 1)
+        )
         constraints = [G * c >= 0]
         prob = cvx.Problem(objective, constraints)
         prob.solve(solver=solver)
@@ -378,7 +438,7 @@ if cvxpy_installed:
         c = np.squeeze(np.asarray(c.value))
         return c, s
 
-    def constrained_foopsi(y, g, sn, b=0, solver='CLARABEL'):
+    def constrained_foopsi(y, g, sn, b=0, solver="CLARABEL"):
         """Solve the noise constrained deconvolution problem using the cvxpy package.
 
         Parameters
@@ -413,8 +473,7 @@ if cvxpy_installed:
         # construct deconvolution matrix  (s = G*c)
         G = scipy.sparse.dia_matrix((np.ones((1, T)), [0]), (T, T))
         for i, gi in enumerate(g):
-            G = G + \
-                scipy.sparse.dia_matrix((-gi * np.ones((1, T)), [-1 - i]), (T, T))
+            G = G + scipy.sparse.dia_matrix((-gi * np.ones((1, T)), [-1 - i]), (T, T))
         c = cvx.Variable(T)  # calcium at each time step
         if b is None:
             b = cvx.Variable(1)
@@ -492,7 +551,7 @@ def _nnls(KK, Ky, s=None, mask=None, tol=1e-9, max_iter=None):
             mu = np.linalg.inv(KK[P][:, P]).dot(Ky[P])
         except Exception:
             mu = np.linalg.inv(KK[P][:, P] + tol * np.eye(P.sum())).dot(Ky[P])
-            print(r'added $\epsilon$I to avoid singularity')
+            print(r"added $\epsilon$I to avoid singularity")
         while len(mu > 0) and min(mu) < 0:
             a = min(s[P][mu < 0] / (s[P][mu < 0] - mu[mu < 0]))
             s[P] += a * (mu - s[P])
@@ -501,7 +560,7 @@ def _nnls(KK, Ky, s=None, mask=None, tol=1e-9, max_iter=None):
                 mu = np.linalg.inv(KK[P][:, P]).dot(Ky[P])
             except Exception:
                 mu = np.linalg.inv(KK[P][:, P] + tol * np.eye(P.sum())).dot(Ky[P])
-                print(r'added $\epsilon$I to avoid singularity')
+                print(r"added $\epsilon$I to avoid singularity")
         s[P] = mu.copy()
         l = Ky - KK[:, P].dot(s[P])
         if max(l) < tol:
@@ -511,10 +570,17 @@ def _nnls(KK, Ky, s=None, mask=None, tol=1e-9, max_iter=None):
     return tmp
 
 
-def onnls(y: np.ndarray, g: list | tuple, lam: float = 0, shift: int = 100,
-          window: int | None = None, mask: np.ndarray | None = None,
-          tol: float = 1e-9, max_iter: int | None = None) -> tuple[np.ndarray, np.ndarray]:
-    """ Infer the most likely discretized spike train underlying an AR(2) fluorescence trace
+def onnls(
+    y: np.ndarray,
+    g: list | tuple,
+    lam: float = 0,
+    shift: int = 100,
+    window: int | None = None,
+    mask: np.ndarray | None = None,
+    tol: float = 1e-9,
+    max_iter: int | None = None,
+) -> tuple[np.ndarray, np.ndarray]:
+    """Infer the most likely discretized spike train underlying an AR(2) fluorescence trace
 
     Solves the sparse non-negative deconvolution problem
     ``argmin_s 1/2|Ks-y|^2 + lam |s|_1`` for ``s>=0``
@@ -560,9 +626,12 @@ def onnls(y: np.ndarray, g: list | tuple, lam: float = 0, shift: int = 100,
     if mask is None:
         mask = np.ones(T, dtype=bool)
     if window is None:
-        w = max(200, len(g) if len(g) > 2 else
-                int(-5 / log(g[0] if len(g) == 1 else
-                             (g[0] + sqrt(g[0] * g[0] + 4 * g[1])) / 2)))
+        w = max(
+            200,
+            len(g)
+            if len(g) > 2
+            else int(-5 / log(g[0] if len(g) == 1 else (g[0] + sqrt(g[0] * g[0] + 4 * g[1])) / 2)),
+        )
     else:
         w = window
     w = min(T, w)
@@ -572,7 +641,7 @@ def onnls(y: np.ndarray, g: list | tuple, lam: float = 0, shift: int = 100,
         _y[-1] = y[-1] - lam
         h = np.exp(log(g[0]) * np.arange(w))
         for i in range(w):
-            K[i:, i] = h[:w - i]
+            K[i:, i] = h[: w - i]
     elif len(g) == 2:  # kernel for AR(2)
         _y = y - lam * (1 - g[0] - g[1])
         _y[-2] = y[-2] - lam * (1 - g[0])
@@ -582,14 +651,15 @@ def onnls(y: np.ndarray, g: list | tuple, lam: float = 0, shift: int = 100,
         if d == r:
             h = np.exp(log(d) * np.arange(1, w + 1)) * np.arange(1, w + 1)
         else:
-            h = (np.exp(log(d) * np.arange(1, w + 1)) -
-                 np.exp(log(r) * np.arange(1, w + 1))) / (d - r)
+            h = (np.exp(log(d) * np.arange(1, w + 1)) - np.exp(log(r) * np.arange(1, w + 1))) / (
+                d - r
+            )
         for i in range(w):
-            K[i:, i] = h[:w - i]
+            K[i:, i] = h[: w - i]
     else:  # arbitrary kernel
         h = g
         for i in range(w):
-            K[i:, i] = h[:w - i]
+            K[i:, i] = h[: w - i]
         if lam:
             a = np.linalg.inv(K).sum(0)
             _y = y - lam * a[0]
@@ -600,26 +670,43 @@ def onnls(y: np.ndarray, g: list | tuple, lam: float = 0, shift: int = 100,
     s = np.zeros(T)
     KK = K.T.dot(K)
     for i in range(0, max(1, T - w), shift):
-        s[i:i + w] = _nnls(KK, K.T.dot(_y[i:i + w]), s[i:i + w], mask=mask[i:i + w],
-                           tol=tol, max_iter=max_iter)[:w]
+        s[i : i + w] = _nnls(
+            KK,
+            K.T.dot(_y[i : i + w]),
+            s[i : i + w],
+            mask=mask[i : i + w],
+            tol=tol,
+            max_iter=max_iter,
+        )[:w]
         # subtract contribution of spikes already committed to
-        _y[i:i + w] -= K[:, :shift].dot(s[i:i + shift])
-    s[i + shift:] = _nnls(KK[-(T - i - shift):, -(T - i - shift):],
-                          K[:T - i - shift, :T - i -
-                              shift].T.dot(_y[i + shift:]),
-                          s[i + shift:], mask=mask[i + shift:])
+        _y[i : i + w] -= K[:, :shift].dot(s[i : i + shift])
+    s[i + shift :] = _nnls(
+        KK[-(T - i - shift) :, -(T - i - shift) :],
+        K[: T - i - shift, : T - i - shift].T.dot(_y[i + shift :]),
+        s[i + shift :],
+        mask=mask[i + shift :],
+    )
     c = np.zeros_like(s)
     for t in np.where(s > tol)[0]:
-        c[t:t + w] += s[t] * h[:min(w, T - t)]
+        c[t : t + w] += s[t] * h[: min(w, T - t)]
     return c, s
 
 
-def constrained_onnlsAR2(y: np.ndarray, g: list | tuple, sn: float, optimize_b: bool = True,
-                         b_nonneg: bool = True, optimize_g: int = 0, decimate: int = 5,
-                         shift: int = 100, window: int | None = None, tol: float = 1e-9,
-                         max_iter: int = 1, penalty: int = 1,
-                         ) -> tuple[np.ndarray, np.ndarray, float, tuple, float]:
-    """ Infer the most likely discretized spike train underlying an AR(2) fluorescence trace
+def constrained_onnlsAR2(
+    y: np.ndarray,
+    g: list | tuple,
+    sn: float,
+    optimize_b: bool = True,
+    b_nonneg: bool = True,
+    optimize_g: int = 0,
+    decimate: int = 5,
+    shift: int = 100,
+    window: int | None = None,
+    tol: float = 1e-9,
+    max_iter: int = 1,
+    penalty: int = 1,
+) -> tuple[np.ndarray, np.ndarray, float, tuple, float]:
+    """Infer the most likely discretized spike train underlying an AR(2) fluorescence trace
 
     Solves the noise constrained sparse non-negative deconvolution problem
     min |s|_1 subject to |c-y|^2 = sn^2 T and s_t = c_t-g1 c_{t-1}-g2 c_{t-2} >= 0
@@ -678,10 +765,12 @@ def constrained_onnlsAR2(y: np.ndarray, g: list | tuple, sn: float, optimize_b: 
     if window is None:
         window = int(min(T, max(200, -5 / log(d))))
     if not optimize_g:
-        g11 = (np.exp(log(d) * np.arange(1, T + 1)) * np.arange(1, T + 1)) \
-            if d == r else \
-            (np.exp(log(d) * np.arange(1, T + 1)) -
-             np.exp(log(r) * np.arange(1, T + 1))) / (d - r)
+        g11 = (
+            (np.exp(log(d) * np.arange(1, T + 1)) * np.arange(1, T + 1))
+            if d == r
+            else (np.exp(log(d) * np.arange(1, T + 1)) - np.exp(log(r) * np.arange(1, T + 1)))
+            / (d - r)
+        )
         g12 = np.append(0, g[1] * g11[:-1])
         g11g11 = np.cumsum(g11 * g11)
         g11g12 = np.cumsum(g11 * g12)
@@ -693,18 +782,23 @@ def constrained_onnlsAR2(y: np.ndarray, g: list | tuple, sn: float, optimize_b: 
     # get initial estimate of b and lam on downsampled data using AR1 model
     if decimate > 0:
         _, s, b, aa, lam = constrained_oasisAR1(
-            y[:len(y) // decimate * decimate].reshape(-1, decimate).mean(1),
-            d**decimate, sn / sqrt(decimate),
-            optimize_b=optimize_b, b_nonneg=b_nonneg, optimize_g=optimize_g)
+            y[: len(y) // decimate * decimate].reshape(-1, decimate).mean(1),
+            d**decimate,
+            sn / sqrt(decimate),
+            optimize_b=optimize_b,
+            b_nonneg=b_nonneg,
+            optimize_g=optimize_g,
+        )
         if optimize_g:
-            d = aa**(1. / decimate)
+            d = aa ** (1.0 / decimate)
             if decimate > 1:
                 s = oasisAR1(y - b, d, lam=lam * (1 - aa) / (1 - d))[1]
-            r = estimate_time_constant(s, 1, fudge_factor=.98)[0]
+            r = estimate_time_constant(s, 1, fudge_factor=0.98)[0]
             g[0] = d + r
             g[1] = -d * r
-            g11 = (np.exp(log(d) * np.arange(1, T + 1)) -
-                   np.exp(log(r) * np.arange(1, T + 1))) / (d - r)
+            g11 = (np.exp(log(d) * np.arange(1, T + 1)) - np.exp(log(r) * np.arange(1, T + 1))) / (
+                d - r
+            )
             g12 = np.append(0, g[1] * g11[:-1])
             g11g11 = np.cumsum(g11 * g11)
             g11g12 = np.cumsum(g11 * g12)
@@ -713,7 +807,7 @@ def constrained_onnlsAR2(y: np.ndarray, g: list | tuple, sn: float, optimize_b: 
         elif decimate > 1:
             s = oasisAR1(y - b, d, lam=lam * (1 - aa) / (1 - d))[1]
         lam *= (1 - d**decimate) / f_lam
-        ff = np.ravel([a + np.arange(-2, 2) for a in np.where(s > s.max() / 10.)[0]])
+        ff = np.ravel([a + np.arange(-2, 2) for a in np.where(s > s.max() / 10.0)[0]])
         ff = np.unique(ff[(ff >= 0) * (ff < T)]).astype(int)
         mask = np.zeros(T, dtype=bool)
         mask[ff] = True
@@ -724,8 +818,7 @@ def constrained_onnlsAR2(y: np.ndarray, g: list | tuple, sn: float, optimize_b: 
     if b_nonneg:
         b = max(b, 0)
     # run ONNLS
-    c, s = onnls(y - b, g, lam=lam, mask=mask,
-                 shift=shift, window=window, tol=tol)
+    c, s = onnls(y - b, g, lam=lam, mask=mask, shift=shift, window=window, tol=tol)
     g_converged = False
     if not optimize_b:  # don't optimize b, just the dual variable lambda and g if optimize_g
         for i in range(max_iter - 1):
@@ -742,18 +835,24 @@ def constrained_onnlsAR2(y: np.ndarray, g: list | tuple, sn: float, optimize_b: 
                 l = ls[i + 1] - f - 1
                 # if and elif correct last 2 time points for |s|_1 instead |c|_1
                 if i == len(ls) - 2:  # last pool
-                    tmp[f] = (1. / f_lam if l == 0 else
-                              (Sg11[l] + g[1] / f_lam * g11[l - 1]
-                               + (g[0] + g[1]) / f_lam * g11[l]
-                               - g11g12[l] * tmp[f - 1]) / g11g11[l])
+                    tmp[f] = (
+                        1.0 / f_lam
+                        if l == 0
+                        else (
+                            Sg11[l]
+                            + g[1] / f_lam * g11[l - 1]
+                            + (g[0] + g[1]) / f_lam * g11[l]
+                            - g11g12[l] * tmp[f - 1]
+                        )
+                        / g11g11[l]
+                    )
                 # secondlast pool if last one has length 1
                 elif i == len(ls) - 3 and ls[-2] == T - 1:
-                    tmp[f] = (Sg11[l] + g[1] / f_lam * g11[l]
-                              - g11g12[l] * tmp[f - 1]) / g11g11[l]
+                    tmp[f] = (Sg11[l] + g[1] / f_lam * g11[l] - g11g12[l] * tmp[f - 1]) / g11g11[l]
                 else:  # all other pools
                     tmp[f] = (Sg11[l] - g11g12[l] * tmp[f - 1]) / g11g11[l]
                 l += 1
-                tmp[f + 1:f + l] = g11[1:l] * tmp[f] + g12[1:l] * tmp[f - 1]
+                tmp[f + 1 : f + l] = g11[1:l] * tmp[f] + g12[1:l] * tmp[f - 1]
 
             aa = tmp.dot(tmp)
             bb = res.dot(tmp)
@@ -778,16 +877,19 @@ def constrained_onnlsAR2(y: np.ndarray, g: list | tuple, sn: float, optimize_b: 
                     tmp = onnls(y, [g1, g2], lam, mask=(s > 1e-2 * s.max()))[0] - y
                     return tmp.dot(tmp)
 
-                result = minimize(lambda x: getRSS(y, x), (log(d), log(r)),
-                                  bounds=((None, -1e-4), (None, -1e-3)), method='L-BFGS-B',
-                                  options={'gtol': 1e-04, 'maxiter': 10, 'ftol': 1e-05})
-                if abs(result['x'][1] - log(d)) < 1e-4:
+                result = minimize(
+                    lambda x: getRSS(y, x),
+                    (log(d), log(r)),
+                    bounds=((None, -1e-4), (None, -1e-3)),
+                    method="L-BFGS-B",
+                    options={"gtol": 1e-04, "maxiter": 10, "ftol": 1e-05},
+                )
+                if abs(result["x"][1] - log(d)) < 1e-4:
                     g_converged = True
-                ld, lr = result['x']
+                ld, lr = result["x"]
                 d, r = exp(ld), exp(lr)
                 g = (d + r, -d * r)
-                c, s = onnls(y, g, lam=lam, mask=mask,
-                             shift=shift, window=window, tol=tol)
+                c, s = onnls(y, g, lam=lam, mask=mask, shift=shift, window=window, tol=tol)
 
     else:  # optimize b
         db = max(np.mean(y - c), 0 if b_nonneg else -np.inf) - b
@@ -806,7 +908,7 @@ def constrained_onnlsAR2(y: np.ndarray, g: list | tuple, sn: float, optimize_b: 
             for i, f in enumerate(ls[:-1]):  # all other pools
                 l = ls[i + 1] - f
                 tmp[f] = (Sg11[l - 1] - g11g12[l - 1] * tmp[f - 1]) / g11g11[l - 1]
-                tmp[f + 1:f + l] = g11[1:l] * tmp[f] + g12[1:l] * tmp[f - 1]
+                tmp[f + 1 : f + l] = g11[1:l] * tmp[f] + g12[1:l] * tmp[f - 1]
             tmp -= tmp.mean()
             aa = tmp.dot(tmp)
             bb = res.dot(tmp)
@@ -819,8 +921,7 @@ def constrained_onnlsAR2(y: np.ndarray, g: list | tuple, sn: float, optimize_b: 
             if b_nonneg:
                 db = max(db, -b)
             b += db
-            c, s = onnls(y - b, g, lam=lam, mask=mask,
-                         shift=shift, window=window, tol=tol)
+            c, s = onnls(y - b, g, lam=lam, mask=mask, shift=shift, window=window, tol=tol)
             # update b and lam
             db = max(np.mean(y - c), 0 if b_nonneg else -np.inf) - b
             b += db
@@ -835,21 +936,22 @@ def constrained_onnlsAR2(y: np.ndarray, g: list | tuple, sn: float, optimize_b: 
                         return 1e3 * thresh
                     d, r = exp(ld), exp(lr)
                     g1, g2 = d + r, -d * r
-                    tmp = b + onnls(y - b, [g1, g2], lam,
-                                    mask=(s > 1e-2 * s.max()))[0] - y
+                    tmp = b + onnls(y - b, [g1, g2], lam, mask=(s > 1e-2 * s.max()))[0] - y
                     return tmp.dot(tmp)
 
-                result = minimize(lambda x: getRSS(y, x), (b, log(d), log(r)),
-                                  bounds=((0 if b_nonneg else None, None),
-                                          (None, -1e-4), (None, -1e-3)), method='L-BFGS-B',
-                                  options={'gtol': 1e-04, 'maxiter': 10, 'ftol': 1e-05})
-                if abs(result['x'][1] - log(d)) < 1e-3:
+                result = minimize(
+                    lambda x: getRSS(y, x),
+                    (b, log(d), log(r)),
+                    bounds=((0 if b_nonneg else None, None), (None, -1e-4), (None, -1e-3)),
+                    method="L-BFGS-B",
+                    options={"gtol": 1e-04, "maxiter": 10, "ftol": 1e-05},
+                )
+                if abs(result["x"][1] - log(d)) < 1e-3:
                     g_converged = True
-                b, ld, lr = result['x']
+                b, ld, lr = result["x"]
                 d, r = exp(ld), exp(lr)
                 g = (d + r, -d * r)
-                c, s = onnls(y - b, g, lam=lam, mask=mask,
-                             shift=shift, window=window, tol=tol)
+                c, s = onnls(y - b, g, lam=lam, mask=mask, shift=shift, window=window, tol=tol)
                 # update b and lam
                 db = max(np.mean(y - c), 0 if b_nonneg else -np.inf) - b
                 b += db
@@ -861,14 +963,15 @@ def constrained_onnlsAR2(y: np.ndarray, g: list | tuple, sn: float, optimize_b: 
             ls = np.append(np.where(s > s_min)[0], T)
             tmp = np.zeros_like(s)
             l = ls[0]  # first pool
-            tmp[:l] = max(0, np.exp(log(d) * np.arange(l)).dot(y[:l]) * (1 - d * d)
-                          / (1 - d**(2 * l))) * np.exp(log(d) * np.arange(l))
+            tmp[:l] = max(
+                0, np.exp(log(d) * np.arange(l)).dot(y[:l]) * (1 - d * d) / (1 - d ** (2 * l))
+            ) * np.exp(log(d) * np.arange(l))
             for i, f in enumerate(ls[:-1]):  # all other pools
                 l = ls[i + 1] - f
-                tmp[f] = (g11[:l].dot(y[f:f + l])
-                          - g11g12[l - 1] * tmp[f - 1]) / g11g11[l - 1]
-                tmp[f + 1:f + l] = g11[1:l] * tmp[f] + g12[1:l] * tmp[f - 1]
+                tmp[f] = (g11[:l].dot(y[f : f + l]) - g11g12[l - 1] * tmp[f - 1]) / g11g11[l - 1]
+                tmp[f + 1 : f + l] = g11[1:l] * tmp[f] + g12[1:l] * tmp[f - 1]
             return tmp
+
         spikesizes = np.sort(s[s > 1e-6])
         i = len(spikesizes) // 2
         l = 0
@@ -895,10 +998,15 @@ def constrained_onnlsAR2(y: np.ndarray, g: list | tuple, sn: float, optimize_b: 
 
 # functions to estimate AR coefficients and sn from
 # https://github.com/agiovann/Constrained_NMF.git
-def estimate_parameters(y: np.ndarray, p: int = 2, range_ff: list = [0.25, 0.5],
-                        method: str = 'mean', lags: int = 10,
-                        fudge_factor: float = 1., nonlinear_fit: bool = False,
-                        ) -> tuple[np.ndarray, float]:
+def estimate_parameters(
+    y: np.ndarray,
+    p: int = 2,
+    range_ff: list = [0.25, 0.5],
+    method: str = "mean",
+    lags: int = 10,
+    fudge_factor: float = 1.0,
+    nonlinear_fit: bool = False,
+) -> tuple[np.ndarray, float]:
     """Estimate noise standard deviation and AR coefficients.
 
     Parameters
@@ -934,9 +1042,14 @@ def estimate_parameters(y: np.ndarray, p: int = 2, range_ff: list = [0.25, 0.5],
     return g, sn
 
 
-def estimate_time_constant(y: np.ndarray, p: int = 2, sn: float | None = None,
-                           lags: int = 10, fudge_factor: float = 1.,
-                           nonlinear_fit: bool = False) -> np.ndarray:
+def estimate_time_constant(
+    y: np.ndarray,
+    p: int = 2,
+    sn: float | None = None,
+    lags: int = 10,
+    fudge_factor: float = 1.0,
+    nonlinear_fit: bool = False,
+) -> np.ndarray:
     """Estimate AR model parameters through the autocovariance function.
 
     Parameters
@@ -980,31 +1093,35 @@ def estimate_time_constant(y: np.ndarray, p: int = 2, sn: float | None = None,
     if np.any(np.isnan(y)):
         y = y[~np.isnan(y)]
     y = y - y.mean()
-    xc = np.array([y[i:].dot(y[:-i if i else None])
-                   for i in range(1 + lags)]) / len(y)
+    xc = np.array([y[i:].dot(y[: -i if i else None]) for i in range(1 + lags)]) / len(y)
 
     if nonlinear_fit and p <= 2:
         xc[0] -= sn**2
         g1 = xc[:-1].dot(xc[1:]) / xc[:-1].dot(xc[:-1])
         if p == 1:
+
             def func(x, a, g):
                 return a * g**x
+
             popt, pcov = curve_fit(func, list(range(len(xc))), xc, (xc[0], g1))
             return popt[1:2] * fudge_factor
         elif p == 2:
+
             def func(x, a, d, r):
-                return a * (d**(x + 1) - r**(x + 1) / (1 - r**2) * (1 - d**2))
-            popt, pcov = curve_fit(func, list(range(len(xc))), xc, (xc[0], g1, .1))
+                return a * (d ** (x + 1) - r ** (x + 1) / (1 - r**2) * (1 - d**2))
+
+            popt, pcov = curve_fit(func, list(range(len(xc))), xc, (xc[0], g1, 0.1))
             d, r = popt[1:]
             d *= fudge_factor
             return np.array([d + r, -d * r])
 
     xc = xc[:, np.newaxis]
-    A = scipy.linalg.toeplitz(xc[np.arange(lags)].ravel(),
-                              xc[np.arange(p)].ravel()) - sn**2 * np.eye(lags, p)
+    A = scipy.linalg.toeplitz(
+        xc[np.arange(lags)].ravel(), xc[np.arange(p)].ravel()
+    ) - sn**2 * np.eye(lags, p)
     g = np.linalg.lstsq(A, xc[1:], rcond=None)[0]
     gr = np.roots(np.concatenate([np.array([1]), -g.flatten()]))
-    gr = (gr + gr.conjugate()) / 2.
+    gr = (gr + gr.conjugate()) / 2.0
     gr[gr > 1] = 0.95 + np.random.normal(0, 0.01, np.sum(gr > 1))
     gr[gr < 0] = 0.15 + np.random.normal(0, 0.01, np.sum(gr < 0))
     g = np.poly(fudge_factor * gr)
@@ -1013,7 +1130,7 @@ def estimate_time_constant(y: np.ndarray, p: int = 2, sn: float | None = None,
     return g.flatten()
 
 
-def GetSn(y: np.ndarray, range_ff: list = [0.25, 0.5], method: str = 'mean') -> float:
+def GetSn(y: np.ndarray, range_ff: list = [0.25, 0.5], method: str = "mean") -> float:
     """
     Estimate noise power through the power spectral density over the range of large frequencies
 
@@ -1048,11 +1165,9 @@ def GetSn(y: np.ndarray, range_ff: list = [0.25, 0.5], method: str = 'mean') -> 
     ind = np.logical_and(ind1, ind2)
     Pxx_ind = Pxx[ind]
     sn = {
-        'mean': lambda Pxx_ind: np.sqrt(np.mean(Pxx_ind / 2)),
-        'median': lambda Pxx_ind: np.sqrt(np.median(Pxx_ind / 2)),
-        'logmexp': lambda Pxx_ind: np.sqrt(np.exp(np.mean(np.log(Pxx_ind / 2))))
+        "mean": lambda Pxx_ind: np.sqrt(np.mean(Pxx_ind / 2)),
+        "median": lambda Pxx_ind: np.sqrt(np.median(Pxx_ind / 2)),
+        "logmexp": lambda Pxx_ind: np.sqrt(np.exp(np.mean(np.log(Pxx_ind / 2)))),
     }[method](Pxx_ind)
 
     return sn
-
-
