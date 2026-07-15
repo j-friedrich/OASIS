@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from math import exp, log, sqrt
+from typing import NamedTuple
 from warnings import warn
 
 import numpy as np
@@ -240,6 +241,16 @@ def gen_sinusoidal_data(
     return Y, truth, trueSpikes
 
 
+class DeconvolveResult(NamedTuple):
+    """Return type of :func:`deconvolve`."""
+
+    c: np.ndarray
+    s: np.ndarray
+    b: float
+    g: tuple
+    lam: float
+
+
 def deconvolve(
     y: np.ndarray,
     tau_d: float | None = None,
@@ -252,7 +263,7 @@ def deconvolve(
     optimize_g: int = 0,
     penalty: int | None = 1,
     **kwargs,
-) -> tuple[np.ndarray, np.ndarray, float, tuple, float]:
+) -> DeconvolveResult:
     """Infer the most likely discretized spike train underlying a fluorescence trace.
 
     Solves the noise constrained sparse non-negative deconvolution problem
@@ -351,22 +362,27 @@ def deconvolve(
         lam = kwargs.pop("lam", 0)
         if len(g) == 1:
             c, s = oasisAR1(y - (b or 0), g[0], lam=lam, **kwargs)
-            return c, s, b or 0.0, tuple(g), 0.0
+            return DeconvolveResult(c, s, b or 0.0, tuple(g), 0.0)
         elif len(g) == 2:
             c, s = oasisAR2(y - (b or 0), g[0], g[1], lam=lam, **kwargs)
-            return c, s, b or 0.0, tuple(g), 0.0
+            return DeconvolveResult(c, s, b or 0.0, tuple(g), 0.0)
         else:
-            raise ValueError("g must have length 1 or 2")
+            raise ValueError(
+                "g must have length 1 or 2 (only AR(1) and AR(2) are implemented), "
+                f"got length {len(g)}"
+            )
     if len(g) == 1:
-        return constrained_oasisAR1(
-            y,
-            g[0],
-            sn,
-            optimize_b=True if b is None else False,
-            b_nonneg=b_nonneg,
-            optimize_g=optimize_g,
-            penalty=penalty,
-            **kwargs,
+        return DeconvolveResult(
+            *constrained_oasisAR1(
+                y,
+                g[0],
+                sn,
+                optimize_b=True if b is None else False,
+                b_nonneg=b_nonneg,
+                optimize_g=optimize_g,
+                penalty=penalty,
+                **kwargs,
+            )
         )
     elif len(g) == 2:
         if optimize_g > 0:
@@ -374,18 +390,22 @@ def deconvolve(
                 "Optimization of AR parameters is already fairly stable for AR(1), "
                 "but slower and more experimental for AR(2)"
             )
-        return constrained_onnlsAR2(
-            y,
-            g,
-            sn,
-            optimize_b=True if b is None else False,
-            b_nonneg=b_nonneg,
-            optimize_g=optimize_g,
-            penalty=penalty,
-            **kwargs,
+        return DeconvolveResult(
+            *constrained_onnlsAR2(
+                y,
+                g,
+                sn,
+                optimize_b=True if b is None else False,
+                b_nonneg=b_nonneg,
+                optimize_g=optimize_g,
+                penalty=penalty,
+                **kwargs,
+            )
         )
     else:
-        print("g must have length 1 or 2, cause only AR(1) and AR(2) are currently implemented")
+        raise ValueError(
+            f"g must have length 1 or 2 (only AR(1) and AR(2) are implemented), got length {len(g)}"
+        )
 
 
 if cvxpy_installed:
@@ -552,7 +572,7 @@ def _nnls(KK, Ky, s=None, mask=None, tol=1e-9, max_iter=None):
             mu = np.linalg.inv(KK[P][:, P]).dot(Ky[P])
         except Exception:
             mu = np.linalg.inv(KK[P][:, P] + tol * np.eye(P.sum())).dot(Ky[P])
-            print(r"added $\epsilon$I to avoid singularity")
+            warn(r"added $\epsilon$I to avoid singularity", RuntimeWarning, stacklevel=2)
         while len(mu > 0) and min(mu) < 0:
             a = min(s[P][mu < 0] / (s[P][mu < 0] - mu[mu < 0]))
             s[P] += a * (mu - s[P])
@@ -561,7 +581,7 @@ def _nnls(KK, Ky, s=None, mask=None, tol=1e-9, max_iter=None):
                 mu = np.linalg.inv(KK[P][:, P]).dot(Ky[P])
             except Exception:
                 mu = np.linalg.inv(KK[P][:, P] + tol * np.eye(P.sum())).dot(Ky[P])
-                print(r"added $\epsilon$I to avoid singularity")
+                warn(r"added $\epsilon$I to avoid singularity", RuntimeWarning, stacklevel=2)
         s[P] = mu.copy()
         l = Ky - KK[:, P].dot(s[P])
         if max(l) < tol:
