@@ -16,5 +16,5 @@ __all__ = [
     "DeconvolveResult",
 ]
 
-__version__ = "0.3.1"
+__version__ = "0.3.2"
 __author__ = "Johannes Friedrich"

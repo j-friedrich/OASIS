@@ -1,5 +1,55 @@
 # Changelog
 
+## [0.3.2] - 2026-07-15
+
+### New features
+
+- **AR(2) auto-estimation via `tau_r=None`**: pass `tau_r=None` (with
+  `tau_d=None`) to `deconvolve` to trigger AR(2) auto-estimation, replacing
+  the undiscoverable `g=(None, None)` interface (closes #32).
+- **Plain deconvolution via `penalty=None`**: skips noise-constrained
+  optimization and calls `oasisAR1` / `oasisAR2` directly with a fixed
+  `lam=0`. The input is assumed baseline-subtracted. `lam` and `s_min` can
+  be passed through as keyword arguments (closes #33).
+- **`DeconvolveResult` NamedTuple**: `deconvolve` now returns a
+  `DeconvolveResult(c, s, b, g, lam)` — positional unpacking is unchanged,
+  but fields are also accessible by name (`result.c`, `result.s`, etc.)
+  (closes #36). Exported from `oasis.__init__`.
+- **NaN handling in `estimate_time_constant` / `estimate_parameters`**:
+  traces with NaN frames no longer crash. NaN frames are dropped before
+  computing the autocovariance. A pairwise alternative was benchmarked and
+  documented in the docstring Notes section; drop was consistently more
+  accurate across gap fractions 2–40 % with random-sized gaps.
+
+### Bug fixes
+
+- **`deconvolve` invalid `g` length** now raises `ValueError` with the
+  actual length instead of printing a message and returning `None` (closes #35).
+
+### Deprecations
+
+- **`g=` parameter in `deconvolve`** is deprecated and will be removed in
+  v0.4.0. Use `tau_d` / `tau_r` instead; convert pre-computed AR parameters
+  with `ar1_to_tau` / `ar2_to_tau` if needed.
+
+### API / code quality
+
+- Replaced `print()` calls with `warnings.warn(..., RuntimeWarning)` in
+  `foopsi` / `constrained_foopsi`.
+- Removed dead `axcov` function and stale commented-out code.
+- Fixed and completed docstrings in `functions.py`.
+
+### CI / packaging
+
+- Lint (`ruff check` + `ruff format --check`) now runs as a separate job
+  that gates the build matrix — lint failures skip the 21-job matrix.
+- Added `testpaths = ["tests"]` to `pyproject.toml`.
+- Updated and re-executed `examples/Demo.ipynb`: `g=(None,None)` →
+  `tau_r=None`; new `penalty=None` cell with `s_min` example.
+- New tests: `tau_r=None` AR(2), `tau_r=0` AR(1) identity, NaN
+  auto-estimate, `penalty=None` for AR(1) and AR(2), deprecation warning
+  on `g=`.
+
 ## [0.3.1] - 2026-06-30
 
 ### New features
