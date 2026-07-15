@@ -298,7 +298,8 @@ def deconvolve(
         (default 0). sn, b_nonneg, and optimize_g are unused in this mode.
     **kwargs : dict
         Further keywords passed on to constrained_oasisAR1 or constrained_onnlsAR2.
-        When penalty=None, only lam is recognised (default 0).
+        When penalty=None, lam (default 0) and s_min are recognised and
+        passed to oasisAR1 / oasisAR2.
 
     Returns
     -------
@@ -349,10 +350,10 @@ def deconvolve(
         # plain deconvolution: fixed lam, no noise constraint, no baseline estimation
         lam = kwargs.pop("lam", 0)
         if len(g) == 1:
-            c, s = oasisAR1(y - (b or 0), g[0], lam=lam)
+            c, s = oasisAR1(y - (b or 0), g[0], lam=lam, **kwargs)
             return c, s, b or 0.0, tuple(g), 0.0
         elif len(g) == 2:
-            c, s = oasisAR2(y - (b or 0), g[0], g[1], lam=lam)
+            c, s = oasisAR2(y - (b or 0), g[0], g[1], lam=lam, **kwargs)
             return c, s, b or 0.0, tuple(g), 0.0
         else:
             raise ValueError("g must have length 1 or 2")
