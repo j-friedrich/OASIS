@@ -42,7 +42,7 @@ filterwarnings = [
 
 [tool.ruff]
 line-length = 100
-exclude = ["examples/"]
+exclude = ["examples/", "CHANGELOG.md"]
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "W"]
