@@ -4,6 +4,11 @@ on:
   push:
     tags:
       - "v*"
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Tag to build and publish (e.g. v0.3.2)"
+        required: true
 
 permissions:
   contents: read
@@ -18,11 +23,13 @@ jobs:
 
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.inputs.tag || github.ref }}
 
       - name: Build wheels
         uses: pypa/cibuildwheel@v2.22.0
         env:
-          CIBW_BUILD: "cp39-* cp310-* cp311-* cp312-* cp313-* cp314-*"
+          CIBW_BUILD: "cp39-* cp310-* cp311-* cp312-* cp313-* cp314-* cp315-*"
           CIBW_SKIP: "*-musllinux* *-manylinux_i686"
           CIBW_MANYLINUX_X86_64_IMAGE: "manylinux_2_28"
           CIBW_MANYLINUX_AARCH64_IMAGE: "manylinux_2_28"
@@ -40,6 +47,8 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.inputs.tag || github.ref }}
 
       - name: Build sdist
         run: |
@@ -75,6 +84,7 @@ jobs:
       - uses: pypa/gh-action-pypi-publish@release/v1
         with:
           repository-url: https://test.pypi.org/legacy/
+          skip-existing: true
 
   publish:
     name: Publish to PyPI (stable releases)
@@ -98,3 +108,5 @@ jobs:
           path: dist/
 
       - uses: pypa/gh-action-pypi-publish@release/v1
+        with:
+          skip-existing: true
