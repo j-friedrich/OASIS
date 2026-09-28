@@ -9,6 +9,10 @@ on:
       tag:
         description: "Tag to build and publish (e.g. v0.3.2)"
         required: true
+      cibw_build:
+        description: "CIBW_BUILD pattern (e.g. cp315-* to patch one Python version)"
+        required: false
+        default: "cp39-* cp310-* cp311-* cp312-* cp313-* cp314-* cp315-*"
 
 permissions:
   contents: read
@@ -27,9 +31,9 @@ jobs:
           ref: ${{ github.event.inputs.tag || github.ref }}
 
       - name: Build wheels
-        uses: pypa/cibuildwheel@v2.22.0
+        uses: pypa/cibuildwheel@v2.23.4
         env:
-          CIBW_BUILD: "cp39-* cp310-* cp311-* cp312-* cp313-* cp314-* cp315-*"
+          CIBW_BUILD: ${{ github.event.inputs.cibw_build || 'cp39-* cp310-* cp311-* cp312-* cp313-* cp314-* cp315-*' }}
           CIBW_SKIP: "*-musllinux* *-manylinux_i686"
           CIBW_MANYLINUX_X86_64_IMAGE: "manylinux_2_28"
           CIBW_MANYLINUX_AARCH64_IMAGE: "manylinux_2_28"
