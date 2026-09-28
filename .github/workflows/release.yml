@@ -34,6 +34,7 @@ jobs:
         uses: pypa/cibuildwheel@v2.23.4
         env:
           CIBW_BUILD: ${{ github.event.inputs.cibw_build || 'cp39-* cp310-* cp311-* cp312-* cp313-* cp314-* cp315-*' }}
+          CIBW_ENABLE: cpython-prerelease
           CIBW_SKIP: "*-musllinux* *-manylinux_i686"
           CIBW_MANYLINUX_X86_64_IMAGE: "manylinux_2_28"
           CIBW_MANYLINUX_AARCH64_IMAGE: "manylinux_2_28"
